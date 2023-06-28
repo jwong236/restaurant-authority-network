@@ -1,5 +1,5 @@
 from utils.config import Config
-#from crawler import Crawler
+from crawler import Crawler
 #from indexer import Indexer
 #from searcher import Searcher
 #from ranker import Ranker
@@ -7,8 +7,8 @@ from utils.config import Config
 class SearchEngine:
     def crawl(self, args):
         configs = Config(args.config_path, "CRAWLER")
-        #crawler = Crawler(configs)
-        #crawler.start()
+        crawler = Crawler(configs)
+        crawler.start()
     def build(self, args):
         configs = Config(args.config_path, "build")
         #inverted_indexer = Indexer(configs)
