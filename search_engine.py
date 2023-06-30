@@ -7,7 +7,7 @@ from crawler import Crawler
 class SearchEngine:
     def crawl(self, args):
         configs = Config(args.config_path, "CRAWLER")
-        crawler = Crawler(configs)
+        crawler = Crawler(configs, args.resume)
         crawler.start()
     def build(self, args):
         configs = Config(args.config_path, "build")

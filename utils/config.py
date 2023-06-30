@@ -6,7 +6,7 @@ class Config:
         if config_type == "CRAWLER":
             self.user_agent = config_parser["CRAWLER"]["USERAGENT"].strip()
             self.threads_count = int(config_parser["CRAWLER"]["THREADCOUNT"])
-            self.save_file = config_parser["CRAWLER"]["SAVE"]
+            self.save_path = config_parser["CRAWLER"]["SAVE_PATH"]
             self.seed_urls = config_parser["CRAWLER"]["SEEDURL"].split(",")
             self.time_delay = float(config_parser["CRAWLER"]["POLITENESS"])
         elif config_type == "INDEXER":
