@@ -1,25 +1,33 @@
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 
-def get_logger(name, filename=None):
+def get_logger(name, filename=None, max_bytes=5*1024*1024, backup_count=10):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
 
-    if not os.path.exists("Logs"):
-        os.makedirs("Logs")
+    log_dir = "Logs"
+    log_file = f"{filename if filename else name}.log"
+    full_log_path = os.path.join(log_dir, log_file)
 
-    fh = logging.FileHandler(f"Logs/{filename if filename else name}.log")
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    else:
+        if os.path.exists(full_log_path):
+            os.remove(full_log_path)
+
+    fh = RotatingFileHandler(
+        full_log_path,
+        maxBytes=max_bytes,
+        backupCount=backup_count
+    )
     fh.setLevel(logging.DEBUG)
 
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-
     formatter = logging.Formatter(
-       "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+
     fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
 
     logger.addHandler(fh)
-    logger.addHandler(ch)
     return logger

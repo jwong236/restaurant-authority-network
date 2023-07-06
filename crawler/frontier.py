@@ -12,24 +12,24 @@ class Frontier(object):
         self.save_file = None
 
         
-        if not os.path.exists(self.config.save_path) and not resume:
+        if not os.path.exists(self.config.SAVE_PATH) and not resume:
             # Save file doesn't exist and user 
-            self.logger.info(f"Save file does not exist {self.config.save_path}, starting from seed.")
-        elif os.path.exists(self.config.save_path) and resume:
+            self.logger.info(f"Save file does not exist {self.config.SAVE_PATH}, starting from seed.")
+        elif os.path.exists(self.config.SAVE_PATH) and resume:
             # Save file does exists, but request to start from seed.
-            self.logger.info(f"Found save file {self.config.save_path}, deleting it.")
-            os.remove(self.config.save_path)
+            self.logger.info(f"Found save file {self.config.SAVE_PATH}, deleting it.")
+            os.remove(self.config.SAVE_PATH)
     
         # Load existing save file, or create one if it does not exist.
-        self.save_file = shelve.open(self.config.save_path)
+        self.save_file = shelve.open(self.config.SAVE_PATH)
         if resume:
-            for url in self.config.seed_urls:
+            for url in self.config.SEED_URLS:
                 self.add_url(url)
         else:
             # Set the frontier state with contents of save file.
             self._parse_save_file()
             if not self.save_file:
-                for url in self.config.seed_urls:
+                for url in self.config.SEED_URLS:
                     self.add_url(url)
 
     def _parse_save_file(self):
@@ -49,7 +49,7 @@ class Frontier(object):
             return None
 
     def add_url(self, url):
-        url = normalize(url)
+        #url = normalize(url)
         urlhash = get_urlhash(url)
         if urlhash not in self.save_file:
             self.save_file[urlhash] = (url, False)
