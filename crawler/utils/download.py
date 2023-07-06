@@ -1,15 +1,27 @@
 import requests
 from crawler.utils.response import Response
 
-def download(url, config, logger=None):
-    headers = {"User-Agent": config.user_agent}
+def download(raw_url, config, logger=None):
+    error = None
+    resp = None
     try:
-        resp = requests.get(url, headers=headers)
+        resp = requests.get(raw_url, headers={"User-Agent": config.user_agent})
         if resp.status_code == 200:
-            return Response(resp)
+            if logger is not None:
+                logger.info(f"Successfully downloaded: {raw_url}")
+            return Response(raw_url=raw_url, url=resp.url, status_code=resp.status_code, headers=resp.headers, content=resp.content, text=resp.text)
         else:
-            logger.error(f"Error downloading {url} - HTTP {resp.status_code}")
-            return None
+            error = f"Error downloading {raw_url}: HTTP {resp.status_code}"
+            if logger is not None:
+                logger.error(error)
+            return Response(status_code=resp.status_code, error=error)
     except Exception as e:
-        logger.error(f"Error downloading {url}: {e}")
-        return None
+        error = f"Error downloading {raw_url}: {e}"
+        if resp is not None:
+            if logger is not None:
+                logger.error(error)
+            return Response(status_code=resp.status_code, error=error)
+        else:
+            if logger is not None:
+                logger.error(error)
+            return Response(error=error)
