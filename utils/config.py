@@ -4,16 +4,23 @@ class Config:
         config_parser = configparser.ConfigParser()
         config_parser.read(config_path)
         if config_type == "CRAWLER":
-            self.user_agent = config_parser["CRAWLER"]["USERAGENT"].strip()
-            self.threads_count = int(config_parser["CRAWLER"]["THREADCOUNT"])
-            self.save_path = config_parser["CRAWLER"]["SAVE_PATH"]
-            self.seed_urls = config_parser["CRAWLER"]["SEEDURL"].split(",")
-            self.time_delay = float(config_parser["CRAWLER"]["POLITENESS"])
+            self.USER_AGENT = config_parser["CRAWLER"]["USER_AGENT"].strip()
+            self.SEED_URLS = config_parser["CRAWLER"]["SEED_URLS"].split(",")
+            self.POLITENESS = float(config_parser["CRAWLER"]["POLITENESS"])
+            self.SAVE_PATH = config_parser["CRAWLER"]["SAVE_PATH"]
+            self.THREAD_COUNT = int(config_parser["CRAWLER"]["THREAD_COUNT"])
+            self.CORPUS_DIRECTORY = config_parser["CRAWLER"]["CORPUS_DIRECTORY"]
         elif config_type == "INDEXER":
-            self.batch_size = int(config_parser["INDEXER"]["BATCH_SIZE"])
-            self.max_file_size = int(config_parser["INDEXER"]["MAX_FILE_SIZE"])
+            self.CORPUS_DIRECTORY = config_parser["INDEXER"]["CORPUS_DIRECTORY"]
+            self.PARTIAL_INDEX_PATH = config_parser["INDEXER"]["PARTIAL_INDEX_PATH"]
+            self.INVERTED_INDEX_PATH = config_parser["INDEXER"]["INVERTED_INDEX_PATH"]
+            self.DOCID_MAP_PATH = config_parser["INDEXER"]["DOCID_MAP_PATH"]
+            self.MASTER_INDEX_PATH = config_parser["INDEXER"]["MASTER_INDEX_PATH"]
+            self.BATCH_SIZE = int(config_parser["INDEXER"]["BATCH_SIZE"])
         elif config_type == "SEARCHER": 
-            pass
+            self.PARTIAL_INDEX_PATH = config_parser["SEARCHER"]["PARTIAL_INDEX_PATH"]
+            self.INVERTED_INDEX_PATH = config_parser["SEARCHER"]["INVERTED_INDEX_PATH"]
+            self.DOCID_MAP_PATH = config_parser["SEARCHER"]["DOCID_MAP_PATH"]
         elif config_type == "RANKER":
             pass
         else:
