@@ -5,7 +5,7 @@ def download(raw_url, config, logger=None):
     error = None
     resp = None
     try:
-        resp = requests.get(raw_url, headers={"User-Agent": config.user_agent})
+        resp = requests.get(raw_url, headers={"User-Agent": config.USER_AGENT})
         if resp.status_code == 200:
             if logger is not None:
                 logger.info(f"Successfully downloaded: {raw_url}")

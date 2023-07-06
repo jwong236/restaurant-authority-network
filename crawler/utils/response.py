@@ -11,8 +11,9 @@ class Response(object):
         self.text = text
         self.error = error
         self.json_data = {"url": url, "text": text}
+        self.filename = None
 
     def to_json(self, directory):
-        filename = os.path.join(directory, f'{self.raw_url.replace("/", "_")}.json')
-        with open(filename, 'w') as file:
+        self.filename = os.path.join(directory, f'{self.raw_url.replace("/", "_")}.json')
+        with open(self.filename, 'w') as file:
             json.dump(self.json_data, file)
