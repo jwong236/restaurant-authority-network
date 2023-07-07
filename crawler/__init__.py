@@ -9,6 +9,7 @@ class Crawler(object):
         self.frontier = frontier_factory(config, resume)
         self.workers = list()
         self.worker_factory = worker_factory
+        self.logger.info(f"Crawler initialized with {self.config.THREAD_COUNT} worker threads.")
 
     def start_async(self):
         self.logger.info("Starting asynchronous crawling...")
@@ -17,10 +18,11 @@ class Crawler(object):
             for worker_id in range(self.config.THREAD_COUNT)]
         for worker in self.workers:
             worker.start()
-        self.logger.info(f"Started {self.config.THREAD_COUNT} workers.")
+        self.logger.info(f"Started {self.config.THREAD_COUNT} workers. Asynchronous crawling is now in progress...")
 
     def start(self):
         try:
+            self.logger.info("Starting crawl.")
             self.start_async()
             self.join()
         except KeyboardInterrupt:
@@ -35,4 +37,4 @@ class Crawler(object):
         self.logger.info("Joining worker threads...")
         for worker in self.workers:
             worker.join()
-        self.logger.info("Worker threads have finished their jobs.")
+        self.logger.info("Worker threads have finished their jobs. Crawl is complete.")

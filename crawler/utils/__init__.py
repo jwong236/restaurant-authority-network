@@ -8,11 +8,6 @@ def get_urlhash(url):
         f"{parsed.netloc}/{parsed.path}/{parsed.params}/"
         f"{parsed.query}/{parsed.fragment}".encode("utf-8")).hexdigest()
 
-def normalize(url):
-    if url.endswith("/"):
-        return url.rstrip("/")
-    return url
-
 def is_valid(url):
     # Decide whether to crawl this url or not. 
     # If you decide to crawl it, return True; otherwise return False.

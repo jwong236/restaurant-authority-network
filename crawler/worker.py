@@ -12,7 +12,7 @@ class Worker(Thread):
         self.config = config
         self.frontier = frontier
         self.stop_worker = False
-        super().__init__(daemon=True)
+        super().__init__()
         
     def run(self):
         while not self.stop_worker:
@@ -25,9 +25,7 @@ class Worker(Thread):
                 self.logger.info(f"Attempting to download {tbd_url}")
                 resp = download(tbd_url, self.config, self.logger)
                 self.logger.info(f"Marking url as completed: {tbd_url}")
-                self.frontier.mark_url_complete(tbd_url)
                 time.sleep(self.config.POLITENESS)
-                
                 if self.stop_worker:
                     break
                 if resp.error is not None:
@@ -44,6 +42,7 @@ class Worker(Thread):
                     if is_valid(scraped_url):
                         self.logger.info(f"Adding {scraped_url} to frontier")
                         self.frontier.add_url(scraped_url)
+                self.frontier.mark_url_complete(tbd_url)
                 
             except Exception as e:
                 self.logger.error(f"An error occurred: {e}")
