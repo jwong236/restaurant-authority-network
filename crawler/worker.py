@@ -1,10 +1,12 @@
 from threading import Thread
-from crawler.utils.download import download
-from crawler.utils import is_valid, get_urlhash
-from utils import get_logger
-import time
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
+import time
+
+from crawler.utils.download import download
+from crawler.utils import is_valid, get_urlhash
+
+from utils import get_logger
 
 class Worker(Thread):
     def __init__(self, worker_id, config, frontier):
