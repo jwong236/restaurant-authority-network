@@ -4,7 +4,14 @@ from etl.etl_phase import ETLPhase
 class ETLLinkedList:
     """Manages the ETL pipeline as a linked list, controlling phase execution and resumption."""
 
-    def __init__(self, logger, max_cycles=10):
+    def __init__(
+        self,
+        logger,
+        max_cycles=10,
+        continuous=False,
+        extract_limit=100,
+        transform_limit=100,
+    ):
         self.logger = logger
         self.extract = ETLPhase("extract")
         self.transform = ETLPhase("transform")
@@ -15,9 +22,13 @@ class ETLLinkedList:
         self.transform.next_phase = self.load
 
         self.head = self.extract
-        self.continuous = False
+
+        # Configs
         self.max_cycles = max_cycles  # Max cycles for continuous mode
+        self.continuous = continuous
         self.cycle_count = 0
+        self.extract_limit = extract_limit
+        self.transform_limit = transform_limit
 
     def has_pending_work(self):
         """Checks if linked list has pending work by checking each phase."""
@@ -28,9 +39,9 @@ class ETLLinkedList:
             current_phase = current_phase.next_phase
         return False
 
-    def run(self, start_new):
+    def run(self):
         """Executes the ETL pipeline based on user selection."""
-        if start_new:
+        if self.continuous:
             # Check if any phase has pending work
             if self.has_pending_work():
                 print(
@@ -44,9 +55,7 @@ class ETLLinkedList:
             print("\n----------------------------")
             print("Starting a new ETL cycle...")
             print("----------------------------\n")
-            self.continuous = True
         else:
-            self.continuous = False
             if not self.has_pending_work():
                 self.logger.info(
                     "No unfinished work detected. Start a new cycle instead."

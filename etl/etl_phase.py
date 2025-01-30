@@ -16,7 +16,7 @@ class ETLPhase:
         self.name = name
         self.next_phase = next_phase
         self.stage_count = 0
-        self.backup_dir = "staging"
+        self.backup_dir = "backups"
         self.backup_file = (
             os.path.join(self.backup_dir, f"backup_{self.name}.json")
             if self.name in {"extract", "transform"}
@@ -56,9 +56,9 @@ class ETLPhase:
         if self.name == "extract":
             logger.info("[TEST] Extracting data...")
         elif self.name == "transform":
-            logger.info("[TEST] Transforming data...")
+            logger.info("[PLACEHOLDER] Transforming data...")
         elif self.name == "load":
-            logger.info("[TEST] Loading data...")
+            logger.info("[PLACEHOLDER] Loading data...")
 
         # Save progress after execution
         self.save_backup()

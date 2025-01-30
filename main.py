@@ -18,12 +18,12 @@ def main():
 
         if choice == "1":
             logger.info("User selected Start ETL Cycle")
-            etl_pipeline = ETLLinkedList(logger)
-            etl_pipeline.run(start_new=True)
+            etl_pipeline = ETLLinkedList(logger, continuous=True)
+            etl_pipeline.run()
         elif choice == "2":
             logger.info("User selected Continue ETL Cycle")
-            etl_pipeline = ETLLinkedList(logger)
-            etl_pipeline.run(start_new=False)
+            etl_pipeline = ETLLinkedList(logger, continuous=False)
+            etl_pipeline.run()
         elif choice == "3":
             logger.info("Exiting ETL pipeline. Goodbye!")
             break
