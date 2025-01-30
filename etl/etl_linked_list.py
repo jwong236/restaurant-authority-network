@@ -1,9 +1,7 @@
-from etl.etl_phase import ETLPhase
+from etl.etl_phase import ExtractPhase, TransformPhase, LoadPhase
 
 
 class ETLLinkedList:
-    """Manages the ETL pipeline as a linked list, controlling phase execution and resumption."""
-
     def __init__(
         self,
         logger,
@@ -13,22 +11,23 @@ class ETLLinkedList:
         transform_limit=100,
     ):
         self.logger = logger
-        self.extract = ETLPhase("extract")
-        self.transform = ETLPhase("transform")
-        self.load = ETLPhase("load")
 
-        # Link the phases into a list
-        self.extract.next_phase = self.transform
-        self.transform.next_phase = self.load
+        self.load = LoadPhase()
+        self.transform = TransformPhase(
+            transform_limit=transform_limit,
+            next_phase=self.load,  # Link transform -> load
+        )
+        self.extract = ExtractPhase(
+            extract_limit=extract_limit,
+            next_phase=self.transform,  # Link extract -> transform
+        )
 
-        self.head = self.extract
+        self.head = self.extract  # Starting phase
+        self.cycle_count = 0
 
         # Configs
-        self.max_cycles = max_cycles  # Max cycles for continuous mode
+        self.max_cycles = max_cycles
         self.continuous = continuous
-        self.cycle_count = 0
-        self.extract_limit = extract_limit
-        self.transform_limit = transform_limit
 
     def has_pending_work(self):
         """Checks if linked list has pending work by checking each phase."""
