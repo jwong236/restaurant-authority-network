@@ -1,4 +1,4 @@
-from etl.etl_phase import ExtractPhase, TransformPhase, LoadPhase
+from etl.etl_phase import PhaseFactory
 
 
 class ETLLinkedList:
@@ -12,14 +12,12 @@ class ETLLinkedList:
     ):
         self.logger = logger
 
-        self.load = LoadPhase()
-        self.transform = TransformPhase(
-            transform_limit=transform_limit,
-            next_phase=self.load,  # Link transform -> load
+        self.load = PhaseFactory.get_phase("load")
+        self.transform = PhaseFactory.get_phase(
+            "transform", transform_limit=transform_limit, next_phase=self.load
         )
-        self.extract = ExtractPhase(
-            extract_limit=extract_limit,
-            next_phase=self.transform,  # Link extract -> transform
+        self.extract = PhaseFactory.get_phase(
+            "extract", extract_limit=extract_limit, next_phase=self.transform
         )
 
         self.head = self.extract  # Starting phase

@@ -71,3 +71,16 @@ class LoadPhase(ETLPhase):
     def execute(self, logger):
         logger.info("Loading data into database...")
         print("Loading data into database...")
+
+
+class PhaseFactory:
+    @staticmethod
+    def get_phase(phase_name, **kwargs):
+        if phase_name == "extract":
+            return ExtractPhase(**kwargs)
+        elif phase_name == "transform":
+            return TransformPhase(**kwargs)
+        elif phase_name == "load":
+            return LoadPhase(**kwargs)
+        else:
+            raise ValueError(f"Unknown phase: {phase_name}")
