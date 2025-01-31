@@ -12,7 +12,8 @@ def main():
         print("\n=== TravelQuest ETL Pipeline ===")
         print("1. Start ETL Cycle")
         print("2. Continue ETL Cycle")
-        print("3. Exit")
+        print("3. Build Blog Corpus")
+        print("4. Exit")
 
         choice = input("Enter your choice (1-3): ").strip()
 
@@ -25,6 +26,9 @@ def main():
             etl_pipeline = ETLLinkedList(logger, continuous=False)
             etl_pipeline.run()
         elif choice == "3":
+            logger.info("User selected Build Blog Corpus")
+
+        elif choice == "4":
             logger.info("Exiting ETL pipeline. Goodbye!")
             break
         else:

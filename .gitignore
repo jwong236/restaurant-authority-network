@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 .backups/
+etl/source_discovery/scrapy_logs.txt
+etl/source_discovery/seed_restaurants.json
