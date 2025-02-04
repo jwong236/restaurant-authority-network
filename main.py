@@ -12,23 +12,21 @@ def main():
         print("\n=== TravelQuest ETL Pipeline ===")
         print("1. Start ETL Cycle")
         print("2. Continue ETL Cycle")
-        print("3. Build Blog Corpus")
-        print("4. Exit")
+        print("3. Exit")
 
         choice = input("Enter your choice (1-3): ").strip()
 
         if choice == "1":
             logger.info("User selected Start ETL Cycle")
-            etl_pipeline = ETLLinkedList(logger, continuous=True)
+            config = {"continuous": True}
+            etl_pipeline = ETLLinkedList(logger, config)
             etl_pipeline.run()
         elif choice == "2":
             logger.info("User selected Continue ETL Cycle")
-            etl_pipeline = ETLLinkedList(logger, continuous=False)
+            config = {"continuous": False}
+            etl_pipeline = ETLLinkedList(logger, config)
             etl_pipeline.run()
         elif choice == "3":
-            logger.info("User selected Build Blog Corpus")
-
-        elif choice == "4":
             logger.info("Exiting ETL pipeline. Goodbye!")
             break
         else:

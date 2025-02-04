@@ -4,16 +4,17 @@ from abc import ABC, abstractmethod
 
 
 class ETLPhase(ABC):
-    """Abstract base class representing a phase in the ETL process."""
+    """Base class"""
 
-    def __init__(self, name):
+    def __init__(self, name, package, shared_state=None, next_phase=None):
         self.name = name
+        self.package = package
+        self.shared_state = shared_state or {}
+        self.next_phase = next_phase
+
         self.stage_count = 0
         self.backup_dir = "backups"
-        self.backup_file = os.path.join(
-            self.backup_dir,
-            f"backup_{self.name}.json",
-        )
+        self.backup_file = os.path.join(self.backup_dir, f"backup_{self.name}.json")
         os.makedirs(self.backup_dir, exist_ok=True)
 
     def has_pending_work(self):
@@ -38,49 +39,92 @@ class ETLPhase(ABC):
     @abstractmethod
     def execute(self, logger):
         """Abstract method that each phase must implement."""
+        print("simulating phase execution for phase", self.name)
+
+    @abstractmethod
+    def configure(self, config):
+        """Configures the phase with the given config."""
         pass
 
 
-class ExtractPhase(ETLPhase):
-    def __init__(self, extract_limit, next_phase=None):
-        super().__init__(name="extract")
-        self.next_phase = next_phase
-        self.extract_limit = extract_limit
+class ExplorePhase(ETLPhase):
+    def __init__(self, **kwargs):
+        super().__init__("explore", **kwargs)
 
     def execute(self, logger):
-        logger.info(f"Extracting data... Limit: {self.extract_limit}")
-        print("Extracting data...")
+        """Discover new sources and restaurants"""
+        logger.info("Code Stub: Explore phase")
+        print("Code Stub: Explore phase")
+
+    def configure(self, config):
+        """Configures the explore phase with the given config."""
+        print("Code Stub: Configuring explore phase with", config)
+
+
+class ExtractPhase(ETLPhase):
+    def __init__(self, **kwargs):
+        super().__init__("extract", **kwargs)
+
+    def execute(self, logger):
+        """Now accesses shared crawl frontier"""
+        logger.info("Code Stub: Extract phase")
+        print("Code Stub: Extract phase")
+
+    def configure(self, config):
+        """Configures the explore phase with the given config."""
+        print("Code Stub: Configuring explore phase with", config)
 
 
 class TransformPhase(ETLPhase):
-    def __init__(self, transform_limit, next_phase=None):
-        super().__init__(name="transform")
-        self.transform_limit = transform_limit
-        self.next_phase = next_phase
+    def __init__(self, **kwargs):
+        super().__init__("transform", **kwargs)
 
     def execute(self, logger):
-        logger.info(f"Transforming data... Limit: {self.transform_limit}")
-        print("Transforming data...")
+        """Now includes content hashing"""
+        logger.info("Code Stub: Transform phase")
+        print("Code Stub: Transform phase")
+
+    def configure(self, config):
+        """Configures the explore phase with the given config."""
+        print("Code Stub: Configuring explore phase with", config)
 
 
 class LoadPhase(ETLPhase):
-    def __init__(self, next_phase=None):
-        super().__init__(name="load")
-        self.next_phase = next_phase
+    def __init__(self, **kwargs):
+        super().__init__("load", **kwargs)
 
     def execute(self, logger):
-        logger.info("Loading data into database...")
-        print("Loading data into database...")
+        """Bulk loading with conflict handling"""
+        logger.info("Code Stub: Load phase")
+        print("Code Stub: Load phase")
+
+    def configure(self, config):
+        """Configures the explore phase with the given config."""
+        print("Code Stub: Configuring explore phase with", config)
+
+
+class FeedbackPhase(ETLPhase):
+    def __init__(self, **kwargs):
+        super().__init__("feedback", **kwargs)
+
+    def execute(self, logger):
+        """Update priorities and credibility scores"""
+        logger.info("Code Stub: Feedback phase")
+        print("Code Stub: Feedback phase")
+
+    def configure(self, config):
+        """Configures the explore phase with the given config."""
+        print("Code Stub: Configuring explore phase with", config)
 
 
 class PhaseFactory:
     @staticmethod
-    def get_phase(phase_name, **kwargs):
-        if phase_name == "extract":
-            return ExtractPhase(**kwargs)
-        elif phase_name == "transform":
-            return TransformPhase(**kwargs)
-        elif phase_name == "load":
-            return LoadPhase(**kwargs)
-        else:
-            raise ValueError(f"Unknown phase: {phase_name}")
+    def get_phase(name, **kwargs):
+        phase_classes = {
+            "explore": ExplorePhase,
+            "extract": ExtractPhase,
+            "transform": TransformPhase,
+            "load": LoadPhase,
+            "feedback": FeedbackPhase,
+        }
+        return phase_classes[name](**kwargs)

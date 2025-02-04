@@ -33,13 +33,14 @@ def populate_source_types():
 
 
 def get_or_create_restaurant(name, address):
-    """Insert or update restaurant and return restaurant_id"""
+    """Insert restaurant if not exists or update its backlink_count and is_michelin status"""
     cur.execute(
         """
-        INSERT INTO restaurants (name, address, is_michelin)
-        VALUES (%s, %s, TRUE)
+        INSERT INTO restaurants (name, address, backlink_count, is_michelin)
+        VALUES (%s, %s, 1, TRUE)
         ON CONFLICT (name, address) DO UPDATE
-        SET is_michelin = EXCLUDED.is_michelin
+        SET is_michelin = EXCLUDED.is_michelin,
+            backlink_count = restaurants.backlink_count + 1
         RETURNING restaurant_id;
         """,
         (name, address),
@@ -74,8 +75,8 @@ def insert_reference(restaurant_id, source_id, reference_url):
     cur.execute(
         """
         INSERT INTO restaurant_references 
-            (restaurant_id, source_id, reference_url)
-        VALUES (%s, %s, %s)
+            (restaurant_id, source_id, reference_url, sentiment_score)
+        VALUES (%s, %s, %s, 1)
         ON CONFLICT (restaurant_id, source_id, reference_url) 
         DO NOTHING;
         """,
