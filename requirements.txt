@@ -4,3 +4,5 @@ beautifulsoup4
 lxml
 scrapy
 psycopg2
+redis
+pyyaml

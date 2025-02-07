@@ -1,0 +1,33 @@
+pipeline:
+  max_cycles: 100 # Number of cycles to run the pipeline
+  continuous: false # Whether to run the pipeline continuously
+
+initialize:
+  output_file: "michelin_restaurants.json"
+
+explore:
+  discovery_batch_size: 50 # Number of URLs to process per cycle
+  max_crawl_attempts: 3 # Max retries before retiring a URL
+
+extract:
+  max_threads: 5 # Number of parallel threads for extraction
+  request_timeout: 10 # Timeout in seconds for HTTP requests
+  retry_attempts: 3 # Number of retries before skipping a source
+
+transform:
+  credibility_decay: 0.95 # How much credibility decreases over time
+  deduplication_enabled: true # Whether to remove duplicate records
+  sentiment_model: "facebook/bart-large-mnli"
+
+load:
+  database_url: "postgresql://user:password@localhost/etl_db"
+  batch_insert_size: 100 # Number of records to insert at once
+  conflict_resolution: "update" # Options: ignore, update, replace
+
+feedback:
+  credibility_update_threshold: 0.2 # Threshold before credibility scores change
+  priority_recalculation: true # Enable recalculating priority based on credibility scores
+
+logging:
+  log_level: "DEBUG"
+  log_file: "etl_pipeline.log"

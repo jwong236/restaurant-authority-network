@@ -1,16 +1,18 @@
+# ./etl/etl_phase.py
 import os
 import json
 from abc import ABC, abstractmethod
 
+from etl.phases import initialize, explore, extract, transform, load, feedback
+
 
 class ETLPhase(ABC):
-    """Base class"""
-
-    def __init__(self, name, package, shared_state=None, next_phase=None):
+    def __init__(self, name, package, logger=None, next_phase=None, shared_state=None):
         self.name = name
         self.package = package
-        self.shared_state = shared_state or {}
+        self.logger = logger
         self.next_phase = next_phase
+        self.shared_state = shared_state if shared_state else {}
 
         self.stage_count = 0
         self.backup_dir = "backups"
@@ -37,90 +39,99 @@ class ETLPhase(ABC):
                 self.stage_count = data.get("stage_count", 0)
 
     @abstractmethod
-    def execute(self, logger):
-        """Abstract method that each phase must implement."""
-        print("simulating phase execution for phase", self.name)
+    def execute(self, config, cur):
+        """Execute phase logic"""
+        self.logger.info(f"Executing phase: {self.name}")
+        print(f"Executing phase: {self.name}")
 
-    @abstractmethod
-    def configure(self, config):
-        """Configures the phase with the given config."""
-        pass
+
+class InitializePhase(ETLPhase):
+    def __init__(self, **kwargs):
+        super().__init__("initialize", **kwargs)
+
+    def execute(self, config, cur):
+        """Initialize the database and load Michelin data"""
+        self.logger.info("Initialize phase started")
+        print("Initialize phase started")
+
+        initialize.execute_phase(self.logger, config, self.shared_state, cur)
+
+        self.logger.info("Initialize phase completed")
+        print("Initialize phase completed")
 
 
 class ExplorePhase(ETLPhase):
     def __init__(self, **kwargs):
         super().__init__("explore", **kwargs)
 
-    def execute(self, logger):
+    def execute(self, config, cur):
         """Discover new sources and restaurants"""
-        logger.info("Code Stub: Explore phase")
-        print("Code Stub: Explore phase")
+        self.logger.info("Explore phase started")
+        print("Explore phase started")
 
-    def configure(self, config):
-        """Configures the explore phase with the given config."""
-        print("Code Stub: Configuring explore phase with", config)
+        explore.execute_phase(self.logger, config, self.shared_state, cur)
+
+        self.logger.info("Explore phase completed")
+        print("Explore phase completed")
 
 
 class ExtractPhase(ETLPhase):
     def __init__(self, **kwargs):
         super().__init__("extract", **kwargs)
 
-    def execute(self, logger):
-        """Now accesses shared crawl frontier"""
-        logger.info("Code Stub: Extract phase")
-        print("Code Stub: Extract phase")
-
-    def configure(self, config):
-        """Configures the explore phase with the given config."""
-        print("Code Stub: Configuring explore phase with", config)
+    def execute(self, config, cur):
+        """Extract content from crawled URLs"""
+        self.logger.info("Extract phase started")
+        print("Extract phase started")
+        extract.execute_phase(self.logger, config, self.shared_state, cur)
+        self.logger.info("Extract phase completed")
+        print("Extract phase completed")
 
 
 class TransformPhase(ETLPhase):
     def __init__(self, **kwargs):
         super().__init__("transform", **kwargs)
 
-    def execute(self, logger):
-        """Now includes content hashing"""
-        logger.info("Code Stub: Transform phase")
-        print("Code Stub: Transform phase")
-
-    def configure(self, config):
-        """Configures the explore phase with the given config."""
-        print("Code Stub: Configuring explore phase with", config)
+    def execute(self, config, cur):
+        """Transform and analyze content"""
+        self.logger.info("Transform phase started")
+        print("Transform phase started")
+        transform.execute_phase(self.logger, config, self.shared_state, cur)
+        self.logger.info("Transform phase completed")
+        print("Transform phase completed")
 
 
 class LoadPhase(ETLPhase):
     def __init__(self, **kwargs):
         super().__init__("load", **kwargs)
 
-    def execute(self, logger):
-        """Bulk loading with conflict handling"""
-        logger.info("Code Stub: Load phase")
-        print("Code Stub: Load phase")
-
-    def configure(self, config):
-        """Configures the explore phase with the given config."""
-        print("Code Stub: Configuring explore phase with", config)
+    def execute(self, config, cur):
+        """Load processed data into database"""
+        self.logger.info("Load phase started")
+        print("Load phase started")
+        load.execute_phase(self.logger, config, self.shared_state, cur)
+        self.logger.info("Load phase completed")
+        print("Load phase completed")
 
 
 class FeedbackPhase(ETLPhase):
     def __init__(self, **kwargs):
         super().__init__("feedback", **kwargs)
 
-    def execute(self, logger):
-        """Update priorities and credibility scores"""
-        logger.info("Code Stub: Feedback phase")
-        print("Code Stub: Feedback phase")
-
-    def configure(self, config):
-        """Configures the explore phase with the given config."""
-        print("Code Stub: Configuring explore phase with", config)
+    def execute(self, config, cur):
+        """Update credibility scores and analyze metrics"""
+        self.logger.info("Feedback phase started")
+        print("Feedback phase started")
+        feedback.execute_phase(self.logger, config, self.shared_state, cur)
+        self.logger.info("Feedback phase completed")
+        print("Feedback phase completed")
 
 
 class PhaseFactory:
     @staticmethod
     def get_phase(name, **kwargs):
         phase_classes = {
+            "initialize": InitializePhase,
             "explore": ExplorePhase,
             "extract": ExtractPhase,
             "transform": TransformPhase,

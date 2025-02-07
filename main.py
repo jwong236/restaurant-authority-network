@@ -18,12 +18,12 @@ def main():
 
         if choice == "1":
             logger.info("User selected Start ETL Cycle")
-            config = {"continuous": True}
+            config = {"pipeline": {"continuous": True, "max_cycles": 10}}
             etl_pipeline = ETLLinkedList(logger, config)
             etl_pipeline.run()
         elif choice == "2":
             logger.info("User selected Continue ETL Cycle")
-            config = {"continuous": False}
+            config = {"pipeline": {"continuous": False, "max_cycles": 10}}
             etl_pipeline = ETLLinkedList(logger, config)
             etl_pipeline.run()
         elif choice == "3":

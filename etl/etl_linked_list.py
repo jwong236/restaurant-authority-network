@@ -1,65 +1,79 @@
+# ./etl/etl_linked_list.py
+import os
+from dotenv import load_dotenv
+import psycopg2
+import yaml
 from etl.etl_phase import PhaseFactory
+
+load_dotenv()
+
+DB_PARAMS = {
+    "dbname": os.getenv("DB_NAME"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "host": os.getenv("DB_HOST"),
+    "port": os.getenv("DB_PORT"),
+}
 
 
 class ETLLinkedList:
-    def __init__(self, logger, config):
+    def __init__(self, logger):
         self.logger = logger
+        self.config = self.load_config()
+        self.shared_state = {}
 
-        # Initialize shared state
-        self.shared_state = {
-            "crawl_frontier": [],
-            "priority_queue": {},
-            "credibility_scores": {},
-        }
-
-        # Create phases in reverse order to properly link them
         self.feedback = PhaseFactory.get_phase(
             name="feedback",
             package="phases.feedback",
-            shared_state=self.shared_state,
+            logger=self.logger,
             next_phase=None,
+            shared_state=self.shared_state,
         )
 
         self.load = PhaseFactory.get_phase(
             name="load",
             package="phases.load",
-            shared_state=self.shared_state,
+            logger=self.logger,
             next_phase=self.feedback,
+            shared_state=self.shared_state,
         )
 
         self.transform = PhaseFactory.get_phase(
             name="transform",
             package="phases.transform",
-            shared_state=self.shared_state,
+            logger=self.logger,
             next_phase=self.load,
+            shared_state=self.shared_state,
         )
 
         self.extract = PhaseFactory.get_phase(
             name="extract",
             package="phases.extract",
-            shared_state=self.shared_state,
+            logger=self.logger,
             next_phase=self.transform,
+            shared_state=self.shared_state,
         )
 
         self.explore = PhaseFactory.get_phase(
             name="explore",
             package="phases.explore",
-            shared_state=self.shared_state,
+            logger=self.logger,
             next_phase=self.extract,
+            shared_state=self.shared_state,
         )
 
-        # Configure phases
-        self.explore.configure(config.get("explore", {}))
-        self.extract.configure(config.get("extract", {}))
-        self.transform.configure(config.get("transform", {}))
-        self.load.configure(config.get("load", {}))
-        self.feedback.configure(config.get("feedback", {}))
+        self.initialize = PhaseFactory.get_phase(
+            name="initialize",
+            package="phases.initialize",
+            logger=self.logger,
+            next_phase=self.explore,
+            shared_state=self.shared_state,
+        )
 
-        # Pipeline configuration
-        self.head = self.explore
+        self.head = self.initialize
         self.cycle_count = 0
-        self.max_cycles = config.get("max_cycles", 10)
-        self.continuous = config.get("continuous", False)
+        self.max_cycles = self.config.get("pipeline", {}).get("max_cycles", 10)
+        self.continuous = self.config.get("pipeline", {}).get("continuous", False)
 
     def has_pending_work(self):
         """Checks if any phase has pending work"""
@@ -82,22 +96,44 @@ class ETLLinkedList:
         self.execute_pipeline()
 
     def execute_pipeline(self):
-        """Executes the full phase chain"""
-        while self.cycle_count < self.max_cycles:
-            self.logger.info(f"Starting cycle {self.cycle_count + 1}")
-            print(f"\n=== CYCLE {self.cycle_count + 1}/{self.max_cycles} ===")
+        """Executes the full phase chain with a shared database connection"""
+        try:
+            conn = psycopg2.connect(**DB_PARAMS)
+            cur = conn.cursor()
+        except Exception as e:
+            self.logger.error(f"Database connection failed: {e}")
+            return
 
-            current_phase = self.head
-            while current_phase:
-                self.logger.debug(f"Executing {current_phase.name} phase")
-                print(f"▶ {current_phase.name.upper()} PHASE")
-                current_phase.execute(self.logger)
-                current_phase = current_phase.next_phase
+        try:
+            while self.cycle_count < self.max_cycles:
+                self.logger.info(f"Starting cycle {self.cycle_count + 1}")
+                print(f"\n=== CYCLE {self.cycle_count + 1}/{self.max_cycles} ===")
 
-            self.cycle_count += 1
+                current_phase = self.head
+                while current_phase:
+                    self.logger.debug(f"Executing {current_phase.name} phase")
+                    print(f"▶ {current_phase.name.upper()} PHASE")
 
-            if not self.continuous:
-                break
+                    phase_config = self.config.get(current_phase.name, {})
+                    current_phase.execute(phase_config, cur)
 
-        self.logger.info("Pipeline execution completed")
-        print("\nPipeline finished!")
+                    current_phase = current_phase.next_phase
+
+                conn.commit()
+                self.cycle_count += 1
+
+        except Exception as e:
+            conn.rollback()
+            self.logger.error(f"Pipeline execution failed: {e}")
+
+        finally:
+            cur.close()
+            conn.close()
+            self.logger.info("Pipeline execution completed")
+            print("\nPipeline finished!")
+
+    @staticmethod
+    def load_config():
+        """Loads the entire configuration from config.yml"""
+        with open("config.yml", "r") as f:
+            return yaml.safe_load(f)
