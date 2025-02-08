@@ -1,10 +1,6 @@
 # ./src/queue_manager/worker_pool.py
 from concurrent.futures import ThreadPoolExecutor
 import queue
-import threading
-
-# ✅ Define shutdown_flag globally in worker_pool.py
-shutdown_flag = threading.Event()
 
 
 def worker(task_queue, process_function, output_queues=None, is_search_worker=False):
@@ -14,33 +10,25 @@ def worker(task_queue, process_function, output_queues=None, is_search_worker=Fa
     - Search workers exit when the queue is empty.
     - Other workers keep running unless `shutdown_flag` is set.
     """
-    while not shutdown_flag.is_set():
+    while True:
         try:
             task = task_queue.get(timeout=1 if is_search_worker else None)
             result = process_function(task)
 
             if output_queues:
                 if isinstance(output_queues, dict):
-                    if isinstance(result, dict):
-                        for queue_name, data in result.items():
-                            if queue_name in output_queues and data:
-                                output_queues[queue_name].put(data)
-                    else:
-                        list(output_queues.values())[0].put(result)
+                    for queue_name, data in result.items():
+                        if queue_name in output_queues and data:
+                            output_queues[queue_name].put(data)
                 else:
                     output_queues.put(result)
 
             task_queue.task_done()
 
         except queue.Empty:
-            if is_search_worker or shutdown_flag.is_set():
+            if is_search_worker:
                 break
             continue
-
-        except KeyboardInterrupt:
-            print("\n🛑 Worker received shutdown signal. Exiting...")
-            shutdown_flag.set()
-            break
 
         except Exception as e:
             print(f"❌ Error processing task: {e}")
@@ -61,8 +49,3 @@ def start_workers(
             executor.submit(
                 worker, task_queue, process_function, output_queues, is_search_worker
             )
-
-
-def stop_workers():
-    """Sets the shutdown flag to stop all workers."""
-    shutdown_flag.set()

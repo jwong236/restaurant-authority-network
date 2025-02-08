@@ -5,7 +5,7 @@ import threading
 import time
 from dotenv import load_dotenv
 
-from queue_manager.worker_pool import start_workers, stop_workers, shutdown_flag
+from queue_manager.worker_pool import start_workers
 from queue_manager.monitoring import monitor_queues
 from queue_manager.task_queues import (
     restaurant_search_queue,
@@ -24,19 +24,13 @@ from pipeline.load import load_data
 load_dotenv()
 
 
-def signal_handler(sig, frame):
-    # Graceful shutdown
-    print("Shutting down...")
-    shutdown_flag.set()
-
-
 def main():
     # Define paths for restaurant JSON file and progress tracker
     restaurant_json_path = "michelin_restaurants.json"
     progress_tracker_path = "progress_tracker.json"
 
     # Register signal handler for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGINT)
 
     # Initialize pipeline queues
     queues = {
@@ -113,30 +107,13 @@ def main():
         data_loading_queue,
         load_data,
         {
-            "restaurant_search_queue": restaurant_search_queue,  # If a new restaurant is found, send it to the search queue
-            "url_validate_queue": url_validate_queue,  # If new URLs are discovered, send it to the validate queue
+            "restaurant_search_queue": restaurant_search_queue,
+            "url_validate_queue": url_validate_queue,
         },
         num_workers=3,
     )
 
     print("🚀 ETL pipeline started! Press Ctrl+C to stop.")
-
-    try:
-        while not shutdown_flag.is_set():
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n🛑 Shutting down ETL pipeline...")
-        stop_workers()  # ✅ Stops all workers
-        print("✅ Workers stopped. Exiting program.")
-    finally:
-        # ✅ Gracefully drain all queues to avoid thread blocking
-        for q in queues.values():
-            try:
-                while not q.empty():
-                    q.get_nowait()
-            except queue.Empty:
-                continue
-        print("🛑 Pipeline shutdown complete.")
 
 
 if __name__ == "__main__":
