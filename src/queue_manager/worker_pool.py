@@ -21,7 +21,11 @@ def worker(task_queue, process_function, output_queues=None, is_search_worker=Fa
                         if queue_name in output_queues and data:
                             output_queues[queue_name].put(data)
                 else:
-                    output_queues.put(result)
+                    if isinstance(result, list):
+                        for r in result:
+                            output_queues.put(r)
+                    else:
+                        output_queues.put(result)
 
             task_queue.task_done()
 
