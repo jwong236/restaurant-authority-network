@@ -15,6 +15,7 @@ from queue_manager.task_queues import (
 
 from pipeline.initialize import get_restaurant_batch
 from pipeline.search import search_engine_search
+from pipeline.validate import validate_url
 from pipeline.extract import extract_content
 from pipeline.transform import transform_data
 from pipeline.load import load_data
@@ -72,7 +73,7 @@ def main():
     # ------------------------------------------------------------
     start_workers(
         url_validate_queue,
-        extract_content,  # Extracts content from URLs
+        validate_url,  # Extracts content from URLs
         content_extraction_queue,  # Sends extracted content for processing
         num_workers=5,
     )
@@ -82,7 +83,7 @@ def main():
     # ------------------------------------------------------------
     start_workers(
         content_extraction_queue,
-        transform_data,  # Transforms extracted content
+        extract_content,  # Transforms extracted content
         text_transformation_queue,  # Sends transformed data for loading
         num_workers=5,
     )
@@ -92,7 +93,7 @@ def main():
     # ------------------------------------------------------------
     start_workers(
         text_transformation_queue,
-        load_data,  # Loads data into database
+        transform_data,  # Loads data into database
         data_loading_queue,  # Sends results to `data_loading_queue`
         num_workers=3,
     )
