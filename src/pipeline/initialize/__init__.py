@@ -85,7 +85,9 @@ def save_progress(progress_filename, last_index):
         print(f"⚠️ Error saving progress: {e}")
 
 
-def get_restaurant_batch(json_filename, progress_filename, batch_size=10):
+def get_restaurant_batch(
+    json_filename, progress_filename="progress_tracker", batch_size=10
+):
     """Reads a batch of restaurants from the specified JSON file and logs progress."""
     json_path = get_json_path(json_filename)
     last_index = load_progress(progress_filename)

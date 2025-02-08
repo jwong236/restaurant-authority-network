@@ -1,7 +1,11 @@
+# ./src/main.py
+import queue
+import signal
 import threading
+import time
 from dotenv import load_dotenv
 
-from queue_manager.worker_pool import start_workers
+from queue_manager.worker_pool import start_workers, stop_workers, shutdown_flag
 from queue_manager.monitoring import monitor_queues
 from queue_manager.task_queues import (
     restaurant_search_queue,
@@ -12,56 +16,128 @@ from queue_manager.task_queues import (
 )
 
 from pipeline.initialize import get_restaurant_batch
-from pipeline.search import search_engine_process
+from pipeline.search import search_engine_search
 from pipeline.extract import extract_content
 from pipeline.transform import transform_data
 from pipeline.load import load_data
 
-
 load_dotenv()
 
-# Initialize pipeline queues
-queues = {
-    "restaurant_search_queue": restaurant_search_queue,
-    "url_validate_queue": url_validate_queue,
-    "content_extraction_queue": content_extraction_queue,
-    "text_transformation_queue": text_transformation_queue,
-    "data_loading_queue": data_loading_queue,
-}
 
-# Initialize monitoring thread
-monitor_thread = threading.Thread(target=monitor_queues, args=(queues,), daemon=True)
-monitor_thread.start()
+def signal_handler(sig, frame):
+    # Graceful shutdown
+    print("Shutting down...")
+    shutdown_flag.set()
 
-# Begin passes restaurants to the search engine
-restaurant_list = []
-restaurant_list.extend(get_restaurant_batch())
-for r in restaurant_list:
-    restaurant_search_queue.put(r)
 
-# Start ETL Pipeline Workers
-start_workers(
-    restaurant_search_queue,
-    search_engine_process,
-    url_validate_queue,
-    num_workers=3,
-    is_search_worker=True,
-)
-start_workers(
-    url_validate_queue, extract_content, content_extraction_queue, num_workers=5
-)
-start_workers(
-    content_extraction_queue, transform_data, text_transformation_queue, num_workers=5
-)
-start_workers(text_transformation_queue, load_data, data_loading_queue, num_workers=3)
-start_workers(
-    data_loading_queue,
-    load_data,
-    {
+def main():
+    # Define paths for restaurant JSON file and progress tracker
+    restaurant_json_path = "michelin_restaurants.json"
+    progress_tracker_path = "progress_tracker.json"
+
+    # Register signal handler for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # Initialize pipeline queues
+    queues = {
         "restaurant_search_queue": restaurant_search_queue,
         "url_validate_queue": url_validate_queue,
-    },
-    num_workers=3,
-)
+        "content_extraction_queue": content_extraction_queue,
+        "text_transformation_queue": text_transformation_queue,
+        "data_loading_queue": data_loading_queue,
+    }
 
-print("✅ ETL pipeline started!")
+    # Start monitoring thread (prints queue sizes periodically)
+    monitor_thread = threading.Thread(
+        target=monitor_queues, args=(queues,), daemon=True
+    )
+    monitor_thread.start()
+
+    # ------------------------------------------------------------
+    # ✅ STEP 1: Load restaurants from JSON file into `restaurant_search_queue`
+    # ------------------------------------------------------------
+    restaurant_list = get_restaurant_batch(
+        restaurant_json_path, progress_tracker_path, 10
+    )
+    for r in restaurant_list:
+        restaurant_search_queue.put(r)
+
+    print(f"✅ Loaded {len(restaurant_list)} restaurants into restaurant_search_queue.")
+    print("restaurant_search_queue size:", restaurant_search_queue.qsize())
+
+    # ------------------------------------------------------------
+    # ✅ STEP 2: Search for each restaurant → Output URLs to `url_validate_queue`
+    # ------------------------------------------------------------
+    start_workers(
+        restaurant_search_queue,
+        search_engine_search,  # Searches for restaurants
+        url_validate_queue,  # Sends found URLs to `url_validate_queue`
+        num_workers=3,
+        is_search_worker=True,  # Terminates workers if queue is empty
+    )
+
+    # ------------------------------------------------------------
+    # ✅ STEP 3: Validate URLs → Send valid ones to `content_extraction_queue`
+    # ------------------------------------------------------------
+    start_workers(
+        url_validate_queue,
+        extract_content,  # Extracts content from URLs
+        content_extraction_queue,  # Sends extracted content for processing
+        num_workers=5,
+    )
+
+    # ------------------------------------------------------------
+    # ✅ STEP 4: Extract content → Send extracted data to `text_transformation_queue`
+    # ------------------------------------------------------------
+    start_workers(
+        content_extraction_queue,
+        transform_data,  # Transforms extracted content
+        text_transformation_queue,  # Sends transformed data for loading
+        num_workers=5,
+    )
+
+    # ------------------------------------------------------------
+    # ✅ STEP 5: Transform data → Send processed content to `data_loading_queue`
+    # ------------------------------------------------------------
+    start_workers(
+        text_transformation_queue,
+        load_data,  # Loads data into database
+        data_loading_queue,  # Sends results to `data_loading_queue`
+        num_workers=3,
+    )
+
+    # ------------------------------------------------------------
+    # ✅ STEP 6: Load data → Decide whether to send to `restaurant_search_queue` or `url_validate_queue`
+    # ------------------------------------------------------------
+    start_workers(
+        data_loading_queue,
+        load_data,
+        {
+            "restaurant_search_queue": restaurant_search_queue,  # If a new restaurant is found, send it to the search queue
+            "url_validate_queue": url_validate_queue,  # If new URLs are discovered, send it to the validate queue
+        },
+        num_workers=3,
+    )
+
+    print("🚀 ETL pipeline started! Press Ctrl+C to stop.")
+
+    try:
+        while not shutdown_flag.is_set():
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\n🛑 Shutting down ETL pipeline...")
+        stop_workers()  # ✅ Stops all workers
+        print("✅ Workers stopped. Exiting program.")
+    finally:
+        # ✅ Gracefully drain all queues to avoid thread blocking
+        for q in queues.values():
+            try:
+                while not q.empty():
+                    q.get_nowait()
+            except queue.Empty:
+                continue
+        print("🛑 Pipeline shutdown complete.")
+
+
+if __name__ == "__main__":
+    main()
