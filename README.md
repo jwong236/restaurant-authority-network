@@ -15,6 +15,8 @@ The `travelquest-etl` repository is responsible for **scraping, transforming, an
   - Processes **YouTube and TikTok videos** by analyzing titles, descriptions, and comments to extract recommendations.
 - **Data Storage**:
   - Loads structured data into a **database** for later retrieval by the TravelQuest search engine.
+- **Parallelism**:
+  - Multithreaded architecture with fair scheduling techniques ensures efficient CPU usage per unit of time
 
 ## Tech Stack
 

@@ -6,3 +6,5 @@ scrapy
 psycopg2
 redis
 pyyaml
+pytest
+ijson
