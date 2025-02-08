@@ -8,3 +8,4 @@ redis
 pyyaml
 pytest
 ijson
+requests_mock

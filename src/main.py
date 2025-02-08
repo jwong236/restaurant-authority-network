@@ -1,8 +1,6 @@
 # ./src/main.py
-import queue
 import signal
 import threading
-import time
 from dotenv import load_dotenv
 
 from queue_manager.worker_pool import start_workers
@@ -56,7 +54,6 @@ def main():
     for r in restaurant_list:
         restaurant_search_queue.put(r)
 
-    print(f"✅ Loaded {len(restaurant_list)} restaurants into restaurant_search_queue.")
     print("restaurant_search_queue size:", restaurant_search_queue.qsize())
 
     # ------------------------------------------------------------
