@@ -11,13 +11,15 @@ from database.db_operations import (
 )
 from database.db_connector import get_db_connection
 import re
+from urllib.parse import urlparse
 
 
 def normalize_url(url):
     """
-    Normalize a URL by removing any query parameters.
+    Normalize a URL by removing query parameters and fragments.
     """
-    return url.split("?")[0]
+    parsed_url = urlparse(url)
+    return f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
 
 
 def calculate_url_score(url):
@@ -95,7 +97,7 @@ def validate_url(url, relevance_score):
 
         # Insert source if it does not exist
         if not check_source_exists(domain_id, cur):
-            insert_source(domain_id, relevance_score, cur)
+            source_id = insert_source(domain_id, relevance_score, cur)
 
         # Check if URL exists
         url_id = check_url_exists(normalized_url, cur)
@@ -103,7 +105,7 @@ def validate_url(url, relevance_score):
             update_last_crawled(url_id, cur)
             conn.commit()
             return
-        url_id = insert_url(normalized_url, domain_id, cur)
+        url_id = insert_url(normalized_url, source_id, cur)
 
         # Calculate priority and insert into priority queue
         url_score = calculate_url_score(normalized_url)
@@ -115,6 +117,7 @@ def validate_url(url, relevance_score):
     except Exception as e:
         print(f"❌ Error validating URL: {e}")
         conn.rollback()
+        raise
     finally:
         cur.close()
         conn.close()

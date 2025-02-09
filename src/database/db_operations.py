@@ -38,16 +38,19 @@ def check_source_exists(domain_id, cur):
 
 def insert_source(domain_id, credibility_score, cur):
     """
-    Insert a source into the source table.
+    Insert a source into the source table and return it's ID.
     """
     cur.execute(
         """
         INSERT INTO source (domain_id, source_type, credibility_score)
         VALUES (%s, 'news', %s)
         ON CONFLICT (domain_id, source_type) DO NOTHING
+        RETURNING id
         """,
         (domain_id, credibility_score),
     )
+    result = cur.fetchone()
+    return result[0] if result else None
 
 
 def check_url_exists(url, cur):
@@ -66,7 +69,7 @@ def update_last_crawled(url_id, cur):
     cur.execute("UPDATE url SET last_crawled = NOW() WHERE id = %s", (url_id,))
 
 
-def insert_url(url, domain_id, cur):
+def insert_url(url, source_id, cur):
     """
     Insert a URL into the url table and return its ID.
     """
@@ -75,20 +78,9 @@ def insert_url(url, domain_id, cur):
         INSERT INTO url (full_url, source_id, first_seen, last_crawled)
         VALUES (%s, %s, NOW(), NOW()) RETURNING id
         """,
-        (url, domain_id),
+        (url, source_id),
     )
     return cur.fetchone()[0]
-
-
-def calculate_priority_score(url, relevance_score):
-    """
-    Calculate the priority score based on URL hints and relevance score.
-    - Example: If URL contains "breaking-news", boost priority.
-    """
-    base_priority = 1
-    if "breaking-news" in url:
-        base_priority += 2
-    return base_priority + int(relevance_score * 10)
 
 
 def insert_into_priority_queue(url_id, priority, cur):
