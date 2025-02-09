@@ -101,7 +101,7 @@ def test_validate_url_new_entry(setup_test_database):
 
 
 def test_validate_url_existing_url(setup_test_database):
-    """Test that if a URL already exists, it updates `last_crawled` instead of inserting a new entry."""
+    """Test that if a URL already exists, it updates `last_crawled` instead of inserting a new entry and it is not inserted into the priority queue"""
     conn, cur = setup_test_database
     url = "https://example.com/existing"
     relevance_score = 0.7
@@ -127,6 +127,10 @@ def test_validate_url_existing_url(setup_test_database):
     cur.execute("SELECT last_crawled FROM url WHERE id = %s", (url_id,))
     last_crawled = cur.fetchone()[0]
     assert last_crawled is not None, "last_crawled should be updated"
+
+    cur.execute("SELECT priority FROM priority_queue WHERE url_id = %s", (url_id,))
+    priority = cur.fetchone()
+    assert priority is None, "URL should not be added to priority queue"
 
 
 @patch("pipeline.validate.insert_url")
