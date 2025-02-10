@@ -65,7 +65,7 @@ def extract_content():
             return None
 
         remove_priority_queue_url(url, cur)
-        return url, priority, soup
+        return (url, priority, soup)
     except Exception as e:
         print(f"Extraction failed: {e}")
         return None

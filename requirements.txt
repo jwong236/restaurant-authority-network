@@ -9,3 +9,5 @@ pyyaml
 pytest
 ijson
 requests_mock
+spacy
+transformers

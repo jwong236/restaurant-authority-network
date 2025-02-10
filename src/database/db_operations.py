@@ -44,7 +44,7 @@ def insert_source(domain_id, credibility_score, cur):
     cur.execute(
         """
         INSERT INTO source (domain_id, source_type, credibility_score)
-        VALUES (%s, 'news', %s)
+        VALUES (%s, 'webpage', %s)
         ON CONFLICT (domain_id, source_type) DO NOTHING
         RETURNING id
         """,

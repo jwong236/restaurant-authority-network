@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 
 
 def main():
-    url = "https://sandiegomagazine.com/archive/rapid-review-hironori-craft-ramen/"
+    url = "https://chowyum.blog/2022/11/10/hironori-craft-ramen-irvine/"
 
     # Use a real browser's User-Agent to avoid bot detection
     headers = {

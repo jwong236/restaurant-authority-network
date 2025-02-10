@@ -47,7 +47,7 @@ def main():
     monitor_thread.start()
 
     # ------------------------------------------------------------
-    # ✅ STEP 1: Load batches of restaurants from JSON file → Output to `restaurant_search_queue`
+    # ✅ STEP 1 INITIALIZE: Load batches of restaurants from JSON file → Output to `restaurant_search_queue`
     # ------------------------------------------------------------
     restaurant_list = get_restaurant_batch(
         restaurant_json_path, progress_tracker_path, 10
@@ -58,7 +58,7 @@ def main():
     print("restaurant_search_queue size:", restaurant_search_queue.qsize())
 
     # ------------------------------------------------------------
-    # ✅ STEP 2: Query each restaurant in a search engine → Output URLs to `url_validate_queue`
+    # ✅ STEP 2 SEARCH: Query each restaurant in a search engine → Output URLs to `url_validate_queue`
     # ------------------------------------------------------------
     start_workers(
         restaurant_search_queue,
@@ -69,7 +69,7 @@ def main():
     )
 
     # ------------------------------------------------------------
-    # ✅ STEP 3: Validate URLs → No output. (Valid URLs are sent to database)
+    # ✅ STEP 3 VALIDATE: Validate URLs → No output. (Valid URLs are sent to database)
     # ------------------------------------------------------------
     start_workers(
         url_validate_queue,
@@ -79,7 +79,7 @@ def main():
     )
 
     # ------------------------------------------------------------
-    # ✅ STEP 4: Receive valid URLs from database and extract content → Send extracted data to `text_transformation_queue`
+    # ✅ STEP 4 EXTRACT: Receive valid URLs from database and extract content → Send content (url, priority, soup) to `text_transformation_queue`
     # ------------------------------------------------------------
     start_workers(
         content_extraction_queue,
@@ -89,7 +89,7 @@ def main():
     )
 
     # ------------------------------------------------------------
-    # ✅ STEP 5: Transform data → Send processed content to `data_loading_queue`
+    # ✅ STEP 5 TRANSFORM: Transform data → Send processed content to `data_loading_queue`
     # ------------------------------------------------------------
     start_workers(
         text_transformation_queue,
@@ -99,7 +99,7 @@ def main():
     )
 
     # ------------------------------------------------------------
-    # ✅ STEP 6: Load data → Decide whether to send to `restaurant_search_queue` or `url_validate_queue`
+    # ✅ STEP 6 LOAD: Load data → Decide whether to send to `restaurant_search_queue` or `url_validate_queue`
     # ------------------------------------------------------------
     start_workers(
         data_loading_queue,
