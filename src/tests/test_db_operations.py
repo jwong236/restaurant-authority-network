@@ -12,6 +12,9 @@ from database.db_operations import (
     update_last_crawled,
     insert_url,
     insert_into_priority_queue,
+    get_priority_queue_url,
+    update_priority_queue_url,
+    remove_priority_queue_url,
 )
 
 
@@ -142,3 +145,98 @@ def test_insert_into_priority_queue(mock_cursor):
         """,
         (1, 10),
     )
+
+
+def test_get_priority_queue_url(mock_cursor):
+    """
+    Test fetching the highest priority URL.
+    """
+    # Mock database return value (URL, Priority)
+    mock_cursor.fetchone.return_value = ("https://example.com", 5)
+
+    result = get_priority_queue_url(mock_cursor)
+
+    assert result == (
+        "https://example.com",
+        5,
+    ), "Should return the highest priority URL"
+    mock_cursor.execute.assert_called_once()
+
+
+def test_get_priority_queue_url_empty(mock_cursor):
+    """
+    Test when no URLs exist in the priority queue.
+    """
+    # Simulate an empty queue
+    mock_cursor.fetchone.return_value = None
+
+    result = get_priority_queue_url(mock_cursor)
+
+    assert result is None, "Should return None if queue is empty"
+    mock_cursor.execute.assert_called_once()
+
+
+def test_update_priority_queue_url_success(mock_cursor):
+    """
+    Test updating priority when the URL exists.
+    """
+    mock_cursor.fetchone.return_value = (1,)
+
+    update_priority_queue_url("https://example.com", 10, mock_cursor)
+
+    expected_query = "UPDATE priority_queue\n            SET priority = %s\n            WHERE url_id = %s"
+    executed_queries = [
+        call[0][0].strip() for call in mock_cursor.execute.call_args_list
+    ]
+    print(executed_queries)
+    assert (
+        expected_query in executed_queries
+    ), "SQL UPDATE query not found in executed calls"
+
+
+def test_update_priority_queue_url_not_found(mock_cursor, capsys):
+    """
+    Test updating priority when the URL does not exist.
+    """
+    mock_cursor.fetchone.return_value = None  # URL not found
+
+    update_priority_queue_url("https://example.com", 10, mock_cursor)
+
+    captured = capsys.readouterr()
+    assert "⚠️ URL not found in database: https://example.com" in captured.out
+    mock_cursor.execute.assert_any_call(
+        "SELECT id FROM url WHERE full_url = %s", ("https://example.com",)
+    )
+    mock_cursor.execute.assert_called_once()
+
+
+def test_remove_priority_queue_url_success(mock_cursor):
+    """
+    Test removing a URL from the priority queue when it exists.
+    """
+    mock_cursor.fetchone.return_value = (1,)  # URL ID found
+
+    remove_priority_queue_url("https://example.com", mock_cursor)
+
+    mock_cursor.execute.assert_any_call(
+        "SELECT id FROM url WHERE full_url = %s", ("https://example.com",)
+    )
+    mock_cursor.execute.assert_any_call(
+        "DELETE FROM priority_queue WHERE url_id = %s", (1,)
+    )
+
+
+def test_remove_priority_queue_url_not_found(mock_cursor, capsys):
+    """
+    Test removing a URL when it's not found in the database.
+    """
+    mock_cursor.fetchone.return_value = None  # URL not found
+
+    remove_priority_queue_url("https://example.com", mock_cursor)
+
+    captured = capsys.readouterr()
+    assert "URL not found in database: https://example.com" in captured.out
+    mock_cursor.execute.assert_any_call(
+        "SELECT id FROM url WHERE full_url = %s", ("https://example.com",)
+    )
+    mock_cursor.execute.assert_called_once()

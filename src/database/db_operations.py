@@ -1,3 +1,4 @@
+# Validate phase functions
 def check_domain_exists(domain, cur):
     """
     Check if the domain exists in the database and return its ID.
@@ -95,3 +96,58 @@ def insert_into_priority_queue(url_id, priority, cur):
         """,
         (url_id, priority),
     )
+
+
+# Extract phase functions
+
+
+def get_priority_queue_url(cur):
+    """
+    Get the highest priority URL from the priority queue.
+    """
+    cur.execute(
+        """
+        SELECT url.full_url, priority_queue.priority
+        FROM priority_queue
+        JOIN url ON url.id = priority_queue.url_id
+        ORDER BY priority_queue.priority DESC
+        LIMIT 1
+        """
+    )
+    result = cur.fetchone()
+    if result is None:
+        print("No URLs in the priority queue.")
+    return result
+
+
+def update_priority_queue_url(url, priority, cur):
+    """
+    Update the priority of a URL in the priority queue.
+    """
+    cur.execute("SELECT id FROM url WHERE full_url = %s", (url,))
+    url_id = cur.fetchone()
+
+    if url_id:
+        cur.execute(
+            """
+            UPDATE priority_queue
+            SET priority = %s
+            WHERE url_id = %s
+            """,
+            (priority, url_id[0]),
+        )
+    else:
+        print(f"⚠️ URL not found in database: {url}")
+
+
+def remove_priority_queue_url(url, cur):
+    """
+    Remove a URL from the priority queue.
+    """
+    cur.execute("SELECT id FROM url WHERE full_url = %s", (url,))
+    url_id = cur.fetchone()
+
+    if url_id:
+        cur.execute("DELETE FROM priority_queue WHERE url_id = %s", (url_id[0],))
+    else:
+        print(f"URL not found in database: {url}")

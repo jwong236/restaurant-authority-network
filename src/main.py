@@ -47,7 +47,7 @@ def main():
     monitor_thread.start()
 
     # ------------------------------------------------------------
-    # ✅ STEP 1: Load restaurants from JSON file into `restaurant_search_queue`
+    # ✅ STEP 1: Load batches of restaurants from JSON file → Output to `restaurant_search_queue`
     # ------------------------------------------------------------
     restaurant_list = get_restaurant_batch(
         restaurant_json_path, progress_tracker_path, 10
@@ -58,7 +58,7 @@ def main():
     print("restaurant_search_queue size:", restaurant_search_queue.qsize())
 
     # ------------------------------------------------------------
-    # ✅ STEP 2: Search for each restaurant → Output URLs to `url_validate_queue`
+    # ✅ STEP 2: Query each restaurant in a search engine → Output URLs to `url_validate_queue`
     # ------------------------------------------------------------
     start_workers(
         restaurant_search_queue,
@@ -69,17 +69,17 @@ def main():
     )
 
     # ------------------------------------------------------------
-    # ✅ STEP 3: Validate URLs → Send valid ones to `content_extraction_queue`
+    # ✅ STEP 3: Validate URLs → No output. (Valid URLs are sent to database)
     # ------------------------------------------------------------
     start_workers(
         url_validate_queue,
         validate_url,  # Extracts content from URLs
-        content_extraction_queue,  # Sends extracted content for processing
+        content_extraction_queue,  # No output
         num_workers=5,
     )
 
     # ------------------------------------------------------------
-    # ✅ STEP 4: Extract content → Send extracted data to `text_transformation_queue`
+    # ✅ STEP 4: Receive valid URLs from database and extract content → Send extracted data to `text_transformation_queue`
     # ------------------------------------------------------------
     start_workers(
         content_extraction_queue,
