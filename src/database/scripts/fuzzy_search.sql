@@ -9,7 +9,7 @@ RETURNS TABLE (
     id INT,
     name TEXT,
     address TEXT,
-    confidence FLOAT
+    confidence DOUBLE PRECISION
 )
 AS $$
 BEGIN
@@ -18,7 +18,7 @@ BEGIN
         r.id,
         r.name,
         r.address,
-        similarity(r.name, search_term) AS confidence
+        CAST(similarity(r.name, search_term) AS DOUBLE PRECISION) AS confidence
     FROM
         restaurant r
     ORDER BY

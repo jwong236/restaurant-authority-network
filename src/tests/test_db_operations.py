@@ -15,6 +15,8 @@ from database.db_operations import (
     get_priority_queue_url,
     update_priority_queue_url,
     remove_priority_queue_url,
+    check_restaurant_exists,
+    fuzzy_search_restaurant_name,
 )
 
 
@@ -89,7 +91,7 @@ def test_insert_source(mock_cursor):
     mock_cursor.execute.assert_called_once_with(
         """
         INSERT INTO source (domain_id, source_type, credibility_score)
-        VALUES (%s, 'news', %s)
+        VALUES (%s, 'webpage', %s)
         ON CONFLICT (domain_id, source_type) DO NOTHING
         RETURNING id
         """,
@@ -198,7 +200,7 @@ def test_update_priority_queue_url_not_found(mock_cursor, capsys):
     """
     Test updating priority when the URL does not exist.
     """
-    mock_cursor.fetchone.return_value = None  # URL not found
+    mock_cursor.fetchone.return_value = None
 
     update_priority_queue_url("https://example.com", 10, mock_cursor)
 
@@ -214,7 +216,7 @@ def test_remove_priority_queue_url_success(mock_cursor):
     """
     Test removing a URL from the priority queue when it exists.
     """
-    mock_cursor.fetchone.return_value = (1,)  # URL ID found
+    mock_cursor.fetchone.return_value = (1,)
 
     remove_priority_queue_url("https://example.com", mock_cursor)
 
@@ -230,7 +232,7 @@ def test_remove_priority_queue_url_not_found(mock_cursor, capsys):
     """
     Test removing a URL when it's not found in the database.
     """
-    mock_cursor.fetchone.return_value = None  # URL not found
+    mock_cursor.fetchone.return_value = None
 
     remove_priority_queue_url("https://example.com", mock_cursor)
 
@@ -240,3 +242,77 @@ def test_remove_priority_queue_url_not_found(mock_cursor, capsys):
         "SELECT id FROM url WHERE full_url = %s", ("https://example.com",)
     )
     mock_cursor.execute.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "mock_result, expected_output",
+    [
+        ((5,), 5),
+        (None, None),
+    ],
+)
+def test_check_restaurant_exists(mock_result, expected_output):
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = mock_result
+
+    result = check_restaurant_exists("Hironori", mock_cursor)
+
+    assert result == expected_output
+    mock_cursor.execute.assert_called_once_with(
+        "SELECT id FROM restaurant WHERE name = %s", ("Hironori",)
+    )
+
+
+@pytest.mark.parametrize(
+    "mock_result, expected_output",
+    [
+        (
+            (10, "Hironori", "Irvine, CA", 0.92),
+            {"id": 10, "name": "Hironori", "address": "Irvine, CA", "confidence": 0.92},
+        ),
+        (None, None),
+    ],
+)
+def test_fuzzy_search_restaurant_name(mock_result, expected_output):
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = mock_result
+
+    result = fuzzy_search_restaurant_name("Hironori", mock_cursor)
+
+    assert result == expected_output
+    mock_cursor.execute.assert_called_once_with(
+        "SELECT id, name, address, confidence FROM fuzzy_search_restaurant_name(%s)",
+        ("Hironori",),
+    )
+
+
+def test_fuzzy_search_real(db_connection):
+    """Test fuzzy_search_restaurant_name using the actual PostgreSQL stored procedure."""
+    cur = db_connection.cursor()
+
+    # Step 1: Insert a fake test restaurant
+    test_name = "FakeTestRestaurant12345"
+    test_address = "123 Fake Street, Nowhere, XY"
+
+    cur.execute(
+        "INSERT INTO restaurant (name, address) VALUES (%s, %s) RETURNING id;",
+        (test_name, test_address),
+    )
+    test_id = cur.fetchone()[0]
+    db_connection.commit()
+
+    try:
+        # Step 2: Run the fuzzy search on the fake restaurant
+        result = fuzzy_search_restaurant_name(test_name, cur)
+
+        # Step 3: Validate the result
+        assert result is not None, "No restaurant found, but one was inserted"
+        assert result["id"] == test_id, "ID mismatch"
+        assert result["name"] == test_name, "Name mismatch"
+        assert "confidence" in result, "Confidence score missing"
+
+    finally:
+        # Step 4: Cleanup - Remove the fake test restaurant
+        cur.execute("DELETE FROM restaurant WHERE id = %s;", (test_id,))
+        db_connection.commit()
+        cur.close()
