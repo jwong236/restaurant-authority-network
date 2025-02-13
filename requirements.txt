@@ -11,3 +11,4 @@ ijson
 requests_mock
 spacy
 transformers
+fuzzywuzzy

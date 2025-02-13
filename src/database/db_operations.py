@@ -151,3 +151,33 @@ def remove_priority_queue_url(url, cur):
         cur.execute("DELETE FROM priority_queue WHERE url_id = %s", (url_id[0],))
     else:
         print(f"URL not found in database: {url}")
+
+
+# Transform phase functions
+
+
+def check_restaurant_exists(name, cur):
+    """
+    Check if a restaurant exists in the database.
+    """
+    cur.execute("SELECT id FROM restaurant WHERE name = %s", (name,))
+    result = cur.fetchone()
+    return result[0] if result else None
+
+
+def fuzzy_search_restaurant_name(search_term, cur):
+    """
+    Calls the PostgreSQL stored function fuzzy_search_restaurant_name to find the best matching restaurant.
+    """
+    query = "SELECT id, name, address, confidence FROM fuzzy_search_restaurant_name(%s)"
+    cur.execute(query, (search_term,))
+    result = cur.fetchone()
+
+    if result:
+        return {
+            "id": result[0],
+            "name": result[1],
+            "address": result[2],
+            "confidence": result[3],
+        }
+    return None

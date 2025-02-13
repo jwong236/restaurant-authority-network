@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 
 
 def main():
-    url = "https://chowyum.blog/2022/11/10/hironori-craft-ramen-irvine/"
+    url = "https://cosmopolitanlasvegas.mgmresorts.com/en/restaurants.html?filter=property,The_Cosmopolitan_Of_Las_Vegas"
 
     # Use a real browser's User-Agent to avoid bot detection
     headers = {
@@ -16,27 +16,29 @@ def main():
     if response.status_code == 200:  # Ensure request was successful
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Extract title
+        # Extract title of the page
         page_title = soup.title.get_text(strip=True)
 
-        # Extract review or main content
-        review_section = soup.find(["article", "div"], class_="review")
-        if not review_section:
-            review_section = soup.find("main")  # Fallback to main content
-
-        if review_section:
-            extracted_text = review_section.get_text(separator="\n", strip=True)
-        else:
-            extracted_text = soup.body.get_text(separator="\n", strip=True)
+        # Find all headers (h1, h2, h3, h4) that might contain restaurant names
+        extracted_headers = {}
+        for tag in ["h1", "h2", "h3", "h4"]:
+            headers_list = [
+                header.get_text(strip=True) for header in soup.find_all(tag)
+            ]
+            if headers_list:  # Only store if headers exist
+                extracted_headers[tag] = headers_list
 
         # Store extracted content in a dictionary
-        data = {"title": page_title, "content": extracted_text}
+        data = {
+            "title": page_title,
+            "headers": extracted_headers,  # Headers grouped by type
+        }
 
         # Write to JSON file
         try:
-            with open("content.json", "w", encoding="utf-8") as f:
+            with open("headers.json", "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
-            print("✅ Content successfully saved to content.json")
+            print("✅ Headers successfully saved to headers.json")
         except Exception as e:
             print(f"❌ Error writing to file: {e}")
 
