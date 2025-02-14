@@ -12,3 +12,4 @@ requests_mock
 spacy
 transformers
 fuzzywuzzy
+pytest-mock
