@@ -181,3 +181,35 @@ def fuzzy_search_restaurant_name(search_term, cur):
             "confidence": result[3],
         }
     return None
+
+
+# Load phase functions
+
+
+def insert_restaurant(name, address, cur):
+    """
+    Insert a restaurant into the database.
+    """
+    cur.execute(
+        """
+        INSERT INTO restaurant (name, address)
+        VALUES (%s, %s)
+        RETURNING id
+        """,
+        (name, address),
+    )
+    return cur.fetchone()[0]
+
+
+def insert_reference(restaurant_id, url_id, cur):
+    """
+    Insert a reference between a restaurant and a URL.
+    """
+    cur.execute(
+        """
+        INSERT INTO reference (restaurant_id, url_id)
+        VALUES (%s, %s)
+        ON CONFLICT (restaurant_id, url_id) DO NOTHING
+        """,
+        (restaurant_id, url_id),
+    )

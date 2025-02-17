@@ -6,11 +6,11 @@ from .identify_restaurants import identify_restaurants
 
 def is_restaurant(restaurant):
     if check_restaurant_exists(restaurant):
-        return True
+        return restaurant
     result = fuzzy_search_restaurant_name(restaurant)
     if result and result.get("confidence", 0) > 0.5:
-        return True
-    return False
+        return result.get("name")
+    return None
 
 
 def estimate_priority(url, validated_restaurants, priority):
@@ -73,6 +73,8 @@ def transform_data(content_tuple):
     - Load data for target reference into the reference table
     - Load data for derived urls into the priotity queue
     - Load identified restaurants into the restaurants table
+
+
     """
 
     target_url, priority, soup = content_tuple
