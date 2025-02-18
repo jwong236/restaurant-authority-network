@@ -17,6 +17,8 @@ from database.db_operations import (
     remove_priority_queue_url,
     check_restaurant_exists,
     fuzzy_search_restaurant_name,
+    insert_reference,
+    insert_restaurant,
 )
 
 
@@ -316,3 +318,42 @@ def test_fuzzy_search_real(db_connection):
         cur.execute("DELETE FROM restaurant WHERE id = %s;", (test_id,))
         db_connection.commit()
         cur.close()
+
+
+def test_insert_restaurant():
+    """
+    Tests insert_restaurant() by verifying the correct SQL query is executed
+    and that the returned restaurant ID is as expected.
+    """
+    mock_cur = MagicMock()
+    mock_cur.fetchone.return_value = (123,)
+
+    restaurant_id = insert_restaurant("Joe's Pizza", "123 Main St", mock_cur)
+
+    mock_cur.execute.assert_called_once_with(
+        """
+        INSERT INTO restaurant (name, address)
+        VALUES (%s, %s)
+        RETURNING id
+        """,
+        ("Joe's Pizza", "123 Main St"),
+    )
+
+    assert restaurant_id == 123, f"Expected restaurant ID 123, got {restaurant_id}"
+
+
+def test_insert_reference():
+    """
+    Tests insert_reference() by verifying the correct SQL query is executed.
+    """
+    mock_cur = MagicMock()
+    insert_reference(456, 789, mock_cur)
+
+    mock_cur.execute.assert_called_once_with(
+        """
+        INSERT INTO reference (restaurant_id, url_id)
+        VALUES (%s, %s)
+        ON CONFLICT (restaurant_id, url_id) DO NOTHING
+        """,
+        (456, 789),
+    )

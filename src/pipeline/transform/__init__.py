@@ -6,11 +6,11 @@ from .identify_restaurants import identify_restaurants
 
 def is_restaurant(restaurant):
     if check_restaurant_exists(restaurant):
-        return restaurant
+        return True
     result = fuzzy_search_restaurant_name(restaurant)
     if result and result.get("confidence", 0) > 0.5:
-        return result.get("name")
-    return None
+        return True
+    return False
 
 
 def estimate_priority(url, validated_restaurants, priority):

@@ -2,24 +2,14 @@ from database.db_connector import get_db_connection
 from database.db_operations import (
     check_url_exists,
     check_restaurant_exists,
-    insert_into_priority_queue,
     insert_domain,
     insert_source,
     insert_url,
     insert_restaurant,
     insert_reference,
 )
+from pipeline.validate import validate_url
 from urllib.parse import urlparse
-
-
-def load_derived_urls(derived_url_pairs, cur):
-    """
-    Load derived URLs into the priority queue.
-    """
-    for url, priority in derived_url_pairs:
-        if check_url_exists(url, cur):
-            continue
-        insert_into_priority_queue(url, priority, cur)
 
 
 def extract_domain(url):
@@ -67,7 +57,14 @@ def load_reference(restaurant_id, url_id, cur):
 
 
 def load_data(payload):
-    """ """
+    """
+    5 Main goals:
+        1. Derived URLs that exist are discarded
+        2. Derived urls that are new go to the validator
+        3. Restaurants that exist are discarded
+        4. Restaurants that are new go to the restaurant table
+        5. Reference data for the target url is loaded to the database
+    """
     (
         target_url,
         relevance_score,
@@ -79,13 +76,26 @@ def load_data(payload):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        load_derived_urls(derived_url_pairs, cur)
-        url_id = load_target_url(target_url, relevance_score, cur)
-        for identified_restaurant in identified_restaurants:
-            if check_restaurant_exists(identified_restaurant, cur):
+
+        for url, priority in derived_url_pairs:
+            if check_url_exists(url, cur):
+                # 1. Derived URLs that exist are discarded
                 continue
+            # 2. Derived URLs that are new go to the validator
+            validate_url(url, priority, cur)
+
+        url_id = load_target_url(target_url, relevance_score, cur)
+
+        new_identified_restaurants = []
+        for identified_restaurant in identified_restaurants:
+            restaurant_id = check_restaurant_exists(identified_restaurant, cur)
+            if restaurant_id:
+                # 3. Restaurants that exist are discarded
+                continue
+            # 4. Restaurants that are new go to the restaurant table
+            new_identified_restaurants.append(identified_restaurant)
         identified_restaurant_id_list = load_identified_restaurants(
-            identified_restaurants, cur
+            new_identified_restaurants, cur
         )
         rejected_restaurant_id_list = load_rejected_restaurants(
             rejected_restaurants, cur

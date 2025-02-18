@@ -130,21 +130,52 @@ def test_identify_urls_and_restaurants_irrelevant(irrelevant_soup):
     assert 1 == 1
 
 
-@pytest.mark.parametrize(
-    "restaurant_name, db_return, fuzzy_return, expected",
-    [
-        ("Existing Restaurant", True, {"confidence": 0.9}, True),
-        ("New Restaurant", False, {"confidence": 0.6}, True),
-        ("Fake Restaurant", False, {"confidence": 0.3}, False),
-        ("Unknown Restaurant", False, None, False),
-    ],
-)
-def test_is_restaurant(restaurant_name, db_return, fuzzy_return, expected, mocker):
-    mocker.patch("pipeline.transform.check_restaurant_exists", return_value=db_return)
+import pytest
+from unittest.mock import MagicMock
+from pipeline.transform import is_restaurant
+
+
+def test_is_restaurant(mocker):
+    """
+    Tests is_restaurant() with different cases, ensuring correct handling of:
+    - Existing restaurants in the database
+    - Fuzzy-matched restaurants
+    - Non-existent restaurants
+    """
+    # Mock database check
     mocker.patch(
-        "pipeline.transform.fuzzy_search_restaurant_name", return_value=fuzzy_return
+        "pipeline.transform.check_restaurant_exists",
+        side_effect=lambda name: name == "Existing Restaurant",
     )
-    assert is_restaurant(restaurant_name) == expected
+
+    # Mock fuzzy search behavior
+    def mock_fuzzy_search(restaurant):
+        fuzzy_results = {
+            "Existing Restaurant": {"confidence": 0.9},
+            "New Restaurant": {"confidence": 0.6},
+            "Fake Restaurant": {"confidence": 0.3},
+            "Unknown Restaurant": None,
+        }
+        return fuzzy_results.get(restaurant, None)
+
+    mocker.patch(
+        "pipeline.transform.fuzzy_search_restaurant_name", side_effect=mock_fuzzy_search
+    )
+
+    # Test cases
+    test_cases = [
+        ("Existing Restaurant", True),  # Exists in DB
+        ("New Restaurant", True),  # Fuzzy match confidence > 0.5
+        ("Fake Restaurant", False),  # Fuzzy match confidence < 0.5
+        ("Unknown Restaurant", False),  # No match at all
+    ]
+
+    for restaurant_name, expected in test_cases:
+        result = is_restaurant(restaurant_name)
+        print(f"Testing: {restaurant_name} -> Expected: {expected}, Got: {result}")
+        assert (
+            result == expected
+        ), f"Expected {expected}, but got {result} for '{restaurant_name}'"
 
 
 @pytest.mark.parametrize(
