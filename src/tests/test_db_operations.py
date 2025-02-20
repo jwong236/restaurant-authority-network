@@ -5,6 +5,7 @@ from database.db_operations import (
     # Domain
     check_domain_exists,
     insert_domain,
+    get_domain_quality_score,
     update_domain_visit_count,
     update_domain_quality_score,
     # Source
@@ -74,6 +75,16 @@ def test_insert_domain_mock(mock_conn):
         ("example.com", 0.5),
     )
     assert r == 456
+
+
+def test_get_domain_quality_score_mock(mock_conn):
+    c = mock_conn.cursor.return_value.__enter__.return_value
+    c.fetchone.return_value = (0.75,)
+    score = get_domain_quality_score(999, mock_conn)
+    c.execute.assert_called_once_with(
+        "SELECT quality_score FROM domain WHERE id = %s", (999,)
+    )
+    assert score == 0.75
 
 
 def test_update_domain_visit_count_mock(mock_conn):
@@ -294,6 +305,18 @@ def test_insert_domain_db(db_connection):
         row = cur.fetchone()
         assert row and row[0] == -0.5
         cur.execute("DELETE FROM domain WHERE id = %s", (d,))
+    db_connection.commit()
+
+
+def test_get_domain_quality_score_db(db_connection):
+    d_id = insert_domain("test-domain-qual.com", 0.3, db_connection)
+    assert d_id is not None
+
+    fetched_score = get_domain_quality_score(d_id, db_connection)
+    assert fetched_score == 0.3
+
+    with db_connection.cursor() as cur:
+        cur.execute("DELETE FROM domain WHERE id = %s", (d_id,))
     db_connection.commit()
 
 

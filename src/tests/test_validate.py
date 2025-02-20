@@ -1,50 +1,33 @@
+# test_validate.py
+
 import pytest
 from unittest.mock import patch
+from database.db_connector import get_db_connection
 from pipeline.validate import (
     normalize_url,
     calculate_url_score,
     calculate_priority_score,
     validate_url,
 )
-from database.db_connector import get_db_connection
 
 
 @pytest.fixture(scope="function")
 def setup_test_database():
-    """
-    Fixture to set up and tear down a test database.
-    Creates a fresh test environment before each test.
-    """
     conn = get_db_connection()
     cur = conn.cursor()
-
-    cur.execute("DELETE FROM priority_queue")
+    # Cleanup
+    cur.execute("DELETE FROM url_priority_queue")
     cur.execute("DELETE FROM reference")
     cur.execute("DELETE FROM url")
-    cur.execute("DELETE FROM restaurant")
     cur.execute("DELETE FROM source")
     cur.execute("DELETE FROM domain")
-
     conn.commit()
-    yield conn, cur
+    yield conn
     cur.close()
     conn.close()
 
 
-@pytest.fixture
-def url_score():
-    """Return a URL score for testing."""
-    return 0.8
-
-
-@pytest.fixture
-def relevance_score():
-    """Return a relevance score for testing."""
-    return 0.9
-
-
 def test_normalize_url():
-    """Test that normalize_url correctly removes query parameters and fragments."""
     assert (
         normalize_url("https://example.com/page?query=123")
         == "https://example.com/page"
@@ -59,92 +42,124 @@ def test_normalize_url():
 
 
 @pytest.mark.parametrize(
-    "url,expected_score",
+    "url,expected",
     [
         ("https://example.com", 0.5),
-        ("https://example.org", 1.0),
-        ("https://news.com", 1.0),
-        ("https://weeklydigest.com", 0.8),
+        ("https://example.org", 1.0),  # .org => +0.5
+        ("https://news.com", 1.0),  # "news" => +0.5
+        ("https://weeklydigest.com", 0.8),  # "weekly" => +0.3
         ("https://blog.com", 0.5),
     ],
 )
-def test_calculate_url_score(url, expected_score):
-    """Test URL scoring mechanism based on keywords and domain type."""
-    assert calculate_url_score(url) == expected_score
+def test_calculate_url_score(url, expected):
+    assert calculate_url_score(url) == expected
 
 
-def test_calculate_priority_score(url_score, relevance_score):
-    """Test that calculate_priority_score returns a float."""
-    priority_score = calculate_priority_score(url_score, relevance_score)
-    assert isinstance(priority_score, float), "Priority score should be a float"
+def test_calculate_priority_score():
+    # Example: 0.65 * 0.9 + 0.35 * 0.8 = 0.585 + 0.28 = 0.865
+    p = calculate_priority_score(0.9, 0.8)
+    assert abs(p - 0.865) < 1e-9
 
 
+@pytest.mark.parametrize(
+    "url,relevance,expected_priority_range",
+    [
+        ("https://example.org/review", 1.0, (0.9999, 1.0001)),  # near 1.0
+        ("https://unknown.com", 0.0, (0.0, 0.5)),  # 0 or low
+    ],
+)
+def test_calculate_priority_score_ranges(url, relevance, expected_priority_range):
+    u_score = calculate_url_score(url)
+    p = calculate_priority_score(relevance, u_score)
+    assert expected_priority_range[0] <= p <= expected_priority_range[1]
+
+
+# ------------------------------------------------------------------------------
+#                               REAL DB TESTS
+# ------------------------------------------------------------------------------
 def test_validate_url_new_entry(setup_test_database):
-    """Test inserting a new URL and associated data into the database."""
-    conn, cur = setup_test_database
+    conn = setup_test_database
     url = "https://example.com/review"
     relevance_score = 0.9
 
-    validate_url(url, relevance_score)
+    validate_url((url, relevance_score))
 
-    cur.execute("SELECT id FROM domain WHERE domain_name = 'example.com'")
-    domain_id = cur.fetchone()
-    assert domain_id is not None, "Domain should be inserted"
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, quality_score, visit_count FROM domain WHERE domain_name = 'example.com'"
+        )
+        domain_row = cur.fetchone()
+        assert domain_row is not None, "Domain should be inserted"
+        dom_id, dom_score, dom_visits = domain_row
+        # If new, domain_score = 0.0 by default, visits = 1
+        assert abs(dom_score - 0.0) < 1e-9
+        assert dom_visits == 1
 
-    cur.execute("SELECT id FROM url WHERE full_url = %s", (url,))
-    url_id = cur.fetchone()
-    assert url_id is not None, "URL should be inserted"
+        cur.execute("SELECT id FROM url WHERE full_url = %s", (url,))
+        url_row = cur.fetchone()
+        assert url_row is not None, "URL should be inserted"
+        url_id = url_row[0]
 
-    cur.execute("SELECT priority FROM priority_queue WHERE url_id = %s", (url_id,))
-    priority = cur.fetchone()
-    assert priority is not None, "URL should be added to priority queue"
+        # Check priority queue
+        cur.execute(
+            "SELECT priority FROM url_priority_queue WHERE url_id = %s", (url_id,)
+        )
+        priority_row = cur.fetchone()
+        assert priority_row is not None, "URL should be added to priority queue"
+        assert (
+            0.0 < priority_row[0] <= 1.0
+        ), "Priority should be within [0,1] if that's your scoring logic"
 
 
 def test_validate_url_existing_url(setup_test_database):
-    """Test that if a URL already exists, it updates `last_crawled` instead of inserting a new entry and it is not inserted into the priority queue"""
-    conn, cur = setup_test_database
+    conn = setup_test_database
     url = "https://example.com/existing"
     relevance_score = 0.7
 
-    cur.execute(
-        "INSERT INTO domain (domain_name, visit_count) VALUES ('example.com', 5) RETURNING id"
-    )
-    domain_id = cur.fetchone()[0]
-    cur.execute(
-        "INSERT INTO source(domain_id, source_type, credibility_score) VALUES (%s, 'news', %s) RETURNING id",
-        (domain_id, 0.8),
-    )
-    source_id = cur.fetchone()[0]
-    cur.execute(
-        "INSERT INTO url (source_id, full_url, first_seen, last_crawled) VALUES (%s, %s, NOW(), NOW()) RETURNING id",
-        (source_id, url),
-    )
-    url_id = cur.fetchone()[0]
-    conn.commit()
+    # Manually insert a domain, source, url
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO domain (domain_name, visit_count, quality_score) VALUES (%s, %s, %s) RETURNING id",
+            ("example.com", 5, 0.2),
+        )
+        dom_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO source (domain_id, source_type) VALUES (%s, %s) RETURNING id",
+            (dom_id, "webpage"),
+        )
+        src_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO url (source_id, full_url, first_seen, last_crawled) VALUES (%s, %s, NOW(), NOW()) RETURNING id",
+            (src_id, url),
+        )
+        existing_url_id = cur.fetchone()[0]
+        conn.commit()
 
-    validate_url(url, relevance_score)
+    validate_url((url, relevance_score))
 
-    cur.execute("SELECT last_crawled FROM url WHERE id = %s", (url_id,))
-    last_crawled = cur.fetchone()[0]
-    assert last_crawled is not None, "last_crawled should be updated"
+    # Should update last_crawled but not insert new priority queue row
+    with conn.cursor() as cur:
+        cur.execute("SELECT last_crawled FROM url WHERE id = %s", (existing_url_id,))
+        updated_ts = cur.fetchone()[0]
+        assert updated_ts is not None, "last_crawled should be updated"
 
-    cur.execute("SELECT priority FROM priority_queue WHERE url_id = %s", (url_id,))
-    priority = cur.fetchone()
-    assert priority is None, "URL should not be added to priority queue"
+        cur.execute(
+            "SELECT priority FROM url_priority_queue WHERE url_id = %s",
+            (existing_url_id,),
+        )
+        pq_check = cur.fetchone()
+        assert pq_check is None, "Existing URL should not be re-added to priority queue"
 
 
 @patch("pipeline.validate.insert_url")
-@patch("database.db_operations.insert_into_priority_queue")
+@patch("pipeline.validate.insert_into_url_priority_queue")
 def test_validate_url_error_handling(
-    mock_priority_queue, mock_insert_url, setup_test_database
+    mock_insert_queue, mock_insert_url, setup_test_database
 ):
-    """Test error handling during database failures."""
-
+    conn = setup_test_database
     mock_insert_url.side_effect = Exception("DB Error")
 
-    conn, cur = setup_test_database
-
     with pytest.raises(Exception, match="DB Error"):
-        validate_url("https://error.com", 0.6)
+        validate_url(("https://error.com", 0.6))
 
-    mock_priority_queue.assert_not_called()
+    mock_insert_queue.assert_not_called()

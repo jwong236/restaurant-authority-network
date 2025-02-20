@@ -34,6 +34,18 @@ def insert_domain(domain_name, quality_score, conn):
         return None
 
 
+def get_domain_quality_score(domain_id, conn):
+    """Get the quality score of a domain."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT quality_score FROM domain WHERE id = %s", (domain_id,))
+            result = cur.fetchone()
+            return result[0] if result else None
+    except Exception as e:
+        logging.error(f"Error getting domain quality score: {e}")
+        return None
+
+
 def update_domain_visit_count(domain_id, conn):
     """Update the visit count of a domain."""
     try:

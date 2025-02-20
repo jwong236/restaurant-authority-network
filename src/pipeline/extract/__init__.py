@@ -4,7 +4,7 @@ from database.db_connector import get_db_connection
 from database.db_operations import (
     get_priority_queue_url,
     update_priority_queue_url,
-    remove_priority_queue_url,
+    remove_from_url_priority_queue,
 )
 from queue_manager.task_queues import text_transformation_queue
 
@@ -26,7 +26,7 @@ def reprioritize_url(url, priority, response, cur):
 
     if status == 404:
         print(f"Page not found (404). Removing {url} from queue.")
-        remove_priority_queue_url(url, cur)
+        remove_from_url_priority_queue(url, cur)
         return None
     elif status in {403, 500, 502, 503, 504}:
         new_priority = priority * 0.75
@@ -71,7 +71,7 @@ def extract_content():
             print(f"Skipping {url}: No meaningful content found.")
             return None
 
-        remove_priority_queue_url(url, cur)
+        remove_from_url_priority_queue(url, cur)
         text_transformation_queue.put((url, priority, soup))
     except Exception as e:
         print(f"Extraction failed: {e}")

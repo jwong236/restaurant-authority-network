@@ -1,131 +1,99 @@
+from database.db_connector import get_db_connection
 from database.db_operations import (
-    insert_url,
-    check_url_exists,
-    update_last_crawled,
-    insert_into_priority_queue,
+    check_domain_exists,
     insert_domain,
     update_domain_visit_count,
-    insert_source,
-    check_domain_exists,
+    update_domain_quality_score,
     check_source_exists,
+    insert_source,
+    check_url_exists,
+    insert_url,
+    update_last_crawled,
+    insert_into_url_priority_queue,
+    get_domain_quality_score,
 )
-from database.db_connector import get_db_connection
 import re
 from urllib.parse import urlparse
 
 
 def normalize_url(url):
-    """
-    Normalize a URL by removing query parameters and fragments.
-    """
-    parsed_url = urlparse(url)
-    return f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}{p.path}"
 
 
 def calculate_url_score(url):
-    """
-    Calculate a URL score based on its domain and keywords.
-    Higher scores indicate higher credibility for restaurant reviews.
-    COULD USE SOME IMPROVEMENT
-    """
-
-    base_score = 0.5  # Default base score
-
-    high_quality_keywords = ["news", "magazine", "guide", "review"]
-    medium_quality_keywords = [
-        "weekly",
-        "reader",
-        "journal",
-        "digest",
-        "critic",
-        "insider",
-    ]
-
-    # Check domain extension
+    base = 0.5
+    high_kw = ["news", "magazine", "guide", "review"]
+    mid_kw = ["weekly", "reader", "journal", "digest", "critic", "insider"]
     if re.search(r"\.(org|gov|edu)(/|$)", url):
-        base_score += 0.5
-
-    # Check if the URL contains high-quality indicators
-    if any(keyword in url.lower() for keyword in high_quality_keywords):
-        base_score += 0.5
-    elif any(keyword in url.lower() for keyword in medium_quality_keywords):
-        base_score += 0.3
-
-    # Ensure the score is between 0 and 1
-    return max(0, min(base_score, 1))
+        base += 0.5
+    lower = url.lower()
+    if any(k in lower for k in high_kw):
+        base += 0.5
+    elif any(k in lower for k in mid_kw):
+        base += 0.3
+    return max(0, min(base, 1))
 
 
-def calculate_priority_score(url_score, relevance_score):
-    """
-    Calculate the priority score for a URL based on its relevance score.
-    """
-    return relevance_score * 0.65 + url_score * 0.35
+def calculate_priority_score(relevance, url_score):
+    return relevance * 0.65 + url_score * 0.35
 
 
 def validate_url(url_pair):
     """
-    Validate and insert a URL into the database following these steps:
+    Processes a (url, relevance_score) tuple to insert or update records in the database.
 
-    1. Normalize the URL.
-    2. Extract the domain from the URL.
-    3. Check if the domain exists:
-       - If yes, update its visit count.
-       - If no, insert it into the `domain` table.
-    4. Insert the source if it doesn’t exist.
-    5. Check if the URL exists:
-       - If yes, update `last_crawled` and return.
-       - If no, insert it into the `url` table, update `last_crawled` and `first_seen`.
-    6. Calculate priority score and insert the URL into the `priority_queue`.
-
-    Args:
-        url (str): URL to validate.
-        relevance_score (float): Relevance score of the URL.
-
-    Returns:
-        None
+    Steps:
+      1. Normalize the URL (remove query/fragment).
+      2. Extract its domain and check if it exists:
+         - If no, create a new domain (default quality_score=0.0).
+         - If yes, increment visit_count and adjust quality_score.
+      3. Check if source exists for the domain:
+         - Insert one with source_type="webpage" if missing.
+      4. Check if the URL is already in the DB:
+         - If found, update last_crawled and stop.
+         - Otherwise, insert a new URL record.
+      5. Calculate a combined priority (using relevance_score and url_score) and insert into the URL priority queue.
+      6. Commit or rollback on error.
     """
-    url, relevance_score = url_pair
 
+    url, relevance = url_pair
     conn = get_db_connection()
-    cur = conn.cursor()
 
     try:
-        # Normalize URL
-        normalized_url = normalize_url(url)
+        norm_url = normalize_url(url)
+        domain_str = norm_url.split("//", 1)[-1].split("/", 1)[0]
 
-        # Extract domain
-        domain = normalized_url.split("//")[-1].split("/")[0]
-
-        # Check if domain exists and update visit count
-        domain_id = check_domain_exists(domain, cur)
-        if domain_id:
-            update_domain_visit_count(domain_id, cur)
+        dom_id = check_domain_exists(domain_str, conn)
+        if dom_id:
+            update_domain_visit_count(dom_id, conn)
+            old_score = get_domain_quality_score(dom_id, conn)
+            if old_score is not None:
+                new_score = max(-1, min(old_score + 0.1 * (relevance - 0.5), 1))
+                update_domain_quality_score(dom_id, new_score, conn)
         else:
-            domain_id = insert_domain(domain, cur)
+            dom_id = insert_domain(domain_str, 0.0, conn)
+            update_domain_visit_count(dom_id, conn)
 
-        # Insert source if it does not exist
-        if not check_source_exists(domain_id, cur):
-            source_id = insert_source(domain_id, relevance_score, cur)
+        src_id = check_source_exists(dom_id, conn)
+        if not src_id:
+            src_id = insert_source(dom_id, "webpage", conn)
 
-        # Check if URL exists
-        url_id = check_url_exists(normalized_url, cur)
-        if url_id:
-            update_last_crawled(url_id, cur)
+        found_url_id = check_url_exists(norm_url, conn)
+        if found_url_id:
+            update_last_crawled(found_url_id, conn)
             conn.commit()
             return
-        url_id = insert_url(normalized_url, source_id, cur)
 
-        # Calculate priority and insert into priority queue
-        url_score = calculate_url_score(normalized_url)
-        priority = calculate_priority_score(url_score, relevance_score)
-        insert_into_priority_queue(url_id, priority, cur)
-
+        new_url_id = insert_url(norm_url, src_id, conn)
+        url_score = calculate_url_score(norm_url)
+        priority = calculate_priority_score(relevance, url_score)
+        insert_into_url_priority_queue(new_url_id, priority, conn)
         conn.commit()
 
     except Exception as e:
-        print(f"❌ Error validating URL: {e}")
+        print(f"❌ Error in validate_url: {e}")
         conn.rollback()
         raise
     finally:
-        cur.close()
         conn.close()

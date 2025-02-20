@@ -85,6 +85,8 @@ def main():
 
     print_queue_contents()
 
+    input("🔹 Press Enter to start the pipeline...")
+
     # 🔹 Initialization Phase
     initialize(restaurant_json_path, progress_tracker_path)
     print_queue_contents()

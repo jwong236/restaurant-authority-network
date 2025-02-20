@@ -1,23 +1,24 @@
 -- Drop tables in the correct order to avoid foreign key constraint issues
-DROP TABLE IF EXISTS priority_queue;
+DROP TABLE IF EXISTS restaurant_priority_queue;
+DROP TABLE IF EXISTS url_priority_queue;
 DROP TABLE IF EXISTS reference;
 DROP TABLE IF EXISTS url;
 DROP TABLE IF EXISTS restaurant;
 DROP TABLE IF EXISTS source;
 DROP TABLE IF EXISTS domain;
 
--- Recreate tables
+-- Recreate tables with new structure
 CREATE TABLE domain (
     id SERIAL PRIMARY KEY,
     domain_name TEXT UNIQUE NOT NULL,
-	visit_count INT DEFAULT 0
+    visit_count INT DEFAULT 0,
+    quality_score FLOAT CHECK (quality_score >= -1 AND quality_score <= 1)
 );
 
 CREATE TABLE source (
     id SERIAL PRIMARY KEY,
     domain_id INT REFERENCES domain(id) ON DELETE CASCADE,
     source_type TEXT NOT NULL,
-    credibility_score FLOAT CHECK (credibility_score >= 0 AND credibility_score <= 1),
     UNIQUE(domain_id, source_type)
 );
 
@@ -45,8 +46,12 @@ CREATE TABLE reference (
     discovered_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE priority_queue (
+CREATE TABLE url_priority_queue (
     url_id INT PRIMARY KEY REFERENCES url(id) ON DELETE CASCADE,
-    priority INT DEFAULT 1,
-    queued_at TIMESTAMP DEFAULT NOW()
+    priority INT CHECK (priority BETWEEN 0 AND 100) DEFAULT 1
+);
+
+CREATE TABLE restaurant_priority_queue (
+    name TEXT PRIMARY KEY,
+    priority INT CHECK (priority BETWEEN 0 AND 100)
 );
