@@ -32,6 +32,7 @@ def check_source_exists(domain_id, cur):
     """
     Check if a source exists for the given domain.
     """
+    # This is not working as intended
     cur.execute("SELECT id FROM source WHERE domain_id = %s", (domain_id,))
     result = cur.fetchone()
     return result is not None

@@ -7,13 +7,10 @@ from pipeline.load import (
     load_reference,
     load_data,
 )
-from database.db_operations import check_url_exists, check_restaurant_exists
 
 
 def test_extract_domain():
-    """
-    Tests extract_domain() to ensure proper domain extraction.
-    """
+    """Tests extract_domain() to ensure proper domain extraction."""
     assert extract_domain("https://example.com/path/page") == "example.com"
     assert extract_domain("http://sub.example.com") == "sub.example.com"
     assert extract_domain("https://example.com:8080") == "example.com"
@@ -21,9 +18,7 @@ def test_extract_domain():
 
 
 def test_load_target_url():
-    """
-    Tests load_target_url() ensuring correct database operations.
-    """
+    """Tests load_target_url() ensuring correct database operations."""
     mock_cur = MagicMock()
 
     with patch(
@@ -44,9 +39,7 @@ def test_load_target_url():
 
 
 def test_load_identified_restaurants():
-    """
-    Tests load_identified_restaurants() ensuring that all restaurants are inserted.
-    """
+    """Tests load_identified_restaurants() ensuring that all new restaurants are inserted."""
     mock_cur = MagicMock()
     mock_insert_restaurant = MagicMock(side_effect=[101, 102, 103])  # Mock IDs
 
@@ -60,9 +53,7 @@ def test_load_identified_restaurants():
 
 
 def test_load_reference():
-    """
-    Tests load_reference() ensuring references are inserted correctly.
-    """
+    """Tests load_reference() ensuring references are inserted correctly."""
     mock_cur = MagicMock()
 
     with patch(
@@ -76,9 +67,7 @@ def test_load_reference():
 
 
 def test_load_data():
-    """
-    Tests load_data() ensuring database operations are correctly executed.
-    """
+    """Tests load_data() ensuring database operations are correctly executed."""
     mock_conn = MagicMock()
     mock_cur = MagicMock()
     mock_conn.cursor.return_value = mock_cur
@@ -86,42 +75,46 @@ def test_load_data():
     payload = (
         "https://example.com",
         85,  # Relevance score
-        [("https://new-url.com", 60), ("https://existing-url.com", 50)],  # Derived URLs
+        [("https://new-url.com", 60), ("https://another-url.com", 70)],  # Derived URLs
         ["Restaurant X", "Restaurant Y"],  # Identified restaurants
-        ["Restaurant Z"],  # Rejected restaurants
+        ["Restaurant Z"],  # Rejected restaurants (not yet implemented)
     )
 
     with patch("pipeline.load.get_db_connection", return_value=mock_conn), patch(
-        "pipeline.load.validate_url"
-    ) as mock_validate_url, patch(
-        "pipeline.load.check_url_exists",
-        side_effect=lambda url, _: url == "https://existing-url.com",
-    ), patch(
         "pipeline.load.load_target_url", return_value=10
     ) as mock_load_target, patch(
         "pipeline.load.check_restaurant_exists",
-        side_effect=lambda name, _: name == "Restaurant X",
+        side_effect=lambda name, _: name
+        == "Restaurant X",  # Restaurant X already exists
     ), patch(
         "pipeline.load.load_identified_restaurants", return_value=[100]
     ) as mock_load_restaurants, patch(
         "pipeline.load.load_reference"
     ) as mock_load_reference:
 
-        load_data(payload)
+        result = load_data(payload)
 
-        # Ensure only new URLs are validated
-        mock_validate_url.assert_called_once_with("https://new-url.com", 60, mock_cur)
-
-        # Ensure the target URL is processed
+        # ✅ Ensure the target URL is processed
         mock_load_target.assert_called_once_with(payload[0], payload[1], mock_cur)
 
         # ✅ Ensure only new restaurants are inserted
         mock_load_restaurants.assert_called_once_with(["Restaurant Y"], mock_cur)
 
-        # Ensure references are loaded
-        assert mock_load_reference.call_count == 1  # Only 1 new restaurant
+        # ✅ Ensure references are loaded
+        mock_load_reference.assert_called_once_with(
+            100, 10, mock_cur
+        )  # Restaurant Y ID = 100, URL ID = 10
 
-        # Ensure transaction is committed
+        # ✅ Ensure transaction is committed
         mock_conn.commit.assert_called_once()
         mock_cur.close.assert_called_once()
         mock_conn.close.assert_called_once()
+
+        # ✅ Ensure correct return value (no restaurant re-inserted)
+        assert result == {
+            "restaurant_search_queue": None,  # No new restaurants for re-processing
+            "url_validate_queue": [
+                "https://new-url.com",
+                "https://another-url.com",
+            ],  # URLs for validation
+        }

@@ -62,7 +62,7 @@ def calculate_priority_score(url_score, relevance_score):
     return relevance_score * 0.65 + url_score * 0.35
 
 
-def validate_url(url, relevance_score):
+def validate_url(url_pair):
     """
     Validate and insert a URL into the database following these steps:
 
@@ -76,7 +76,15 @@ def validate_url(url, relevance_score):
        - If yes, update `last_crawled` and return.
        - If no, insert it into the `url` table, update `last_crawled` and `first_seen`.
     6. Calculate priority score and insert the URL into the `priority_queue`.
+
+    Args:
+        url (str): URL to validate.
+        relevance_score (float): Relevance score of the URL.
+
+    Returns:
+        None
     """
+    url, relevance_score = url_pair
 
     conn = get_db_connection()
     cur = conn.cursor()

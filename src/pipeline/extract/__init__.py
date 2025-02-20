@@ -6,6 +6,7 @@ from database.db_operations import (
     update_priority_queue_url,
     remove_priority_queue_url,
 )
+from queue_manager.task_queues import text_transformation_queue
 
 
 def request_url(url):
@@ -40,6 +41,12 @@ def extract_content():
     """
     Extract content from the URL and return (url, priority, soup).
     Ensures that extracted content is valid and meaningful.
+
+    Args:
+        None
+
+    Returns:
+        tuple: URL, priority, and BeautifulSoup
     """
     connect = get_db_connection()
     cur = connect.cursor()
@@ -65,7 +72,7 @@ def extract_content():
             return None
 
         remove_priority_queue_url(url, cur)
-        return (url, priority, soup)
+        text_transformation_queue.put((url, priority, soup))
     except Exception as e:
         print(f"Extraction failed: {e}")
         return None

@@ -2,6 +2,7 @@
 from .url_utils import identify_urls_from_soup, extract_homepage
 from database.db_operations import check_restaurant_exists, fuzzy_search_restaurant_name
 from .identify_restaurants import identify_restaurants
+from queue_manager.task_queues import data_loading_queue
 
 
 def is_restaurant(restaurant):
@@ -74,7 +75,11 @@ def transform_data(content_tuple):
     - Load data for derived urls into the priotity queue
     - Load identified restaurants into the restaurants table
 
+    Args:
+        content_tuple (tuple): Tuple containing URL, priority, and BeautifulSoup object.
 
+    Returns:
+        dict: Dictionary containing the transformed data
     """
 
     target_url, priority, soup = content_tuple
@@ -119,4 +124,4 @@ def transform_data(content_tuple):
         "identified_restaurants": validated_restaurants,  # For loading to the restaurants table
         "rejected_restaurants": rejected_restaurants,  # For manual review
     }
-    return payload
+    data_loading_queue.put(payload)

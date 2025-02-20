@@ -1,10 +1,11 @@
 # ./src/main.py
+import queue
 import signal
 import threading
+import logging
+import time
 from dotenv import load_dotenv
-
-from queue_manager.worker_pool import start_workers
-from queue_manager.monitoring import monitor_queues
+from queue_manager.worker_pool import start_workers, QueueLogger
 from queue_manager.task_queues import (
     restaurant_search_queue,
     url_validate_queue,
@@ -12,106 +13,126 @@ from queue_manager.task_queues import (
     text_transformation_queue,
     data_loading_queue,
 )
-
 from pipeline.initialize import get_restaurant_batch
 from pipeline.search import search_engine_search
 from pipeline.validate import validate_url
 from pipeline.extract import extract_content
 from pipeline.transform import transform_data
 from pipeline.load import load_data
+from queue_manager.monitoring import monitor_queues
+
 
 load_dotenv()
 
+# Add names to queues for better logging
+queues = {
+    "restaurant_search_queue": restaurant_search_queue,
+    "url_validate_queue": url_validate_queue,
+    "content_extraction_queue": content_extraction_queue,
+    "text_transformation_queue": text_transformation_queue,
+    "data_loading_queue": data_loading_queue,
+}
+for name, q in queues.items():
+    q._name = name  # Add queue name attribute for logging
+
 
 def main():
-    # Define paths for restaurant JSON file and progress tracker
+    # Initialize with progress tracking
     restaurant_json_path = "michelin_restaurants.json"
     progress_tracker_path = "progress_tracker.json"
 
-    # Register signal handler for graceful shutdown
-    signal.signal(signal.SIGINT)
-
-    # Initialize pipeline queues
-    queues = {
-        "restaurant_search_queue": restaurant_search_queue,
-        "url_validate_queue": url_validate_queue,
-        "content_extraction_queue": content_extraction_queue,
-        "text_transformation_queue": text_transformation_queue,
-        "data_loading_queue": data_loading_queue,
-    }
-
-    # Start monitoring thread (prints queue sizes periodically)
+    # Start monitoring thread
     monitor_thread = threading.Thread(
         target=monitor_queues, args=(queues,), daemon=True
     )
     monitor_thread.start()
+    logging.info("🔍 Started queue monitoring daemon")
 
     # ------------------------------------------------------------
-    # ✅ STEP 1 INITIALIZE: Load batches of restaurants from JSON file → Output to `restaurant_search_queue`
+    # Initialize Pipeline
     # ------------------------------------------------------------
-    restaurant_list = get_restaurant_batch(
-        restaurant_json_path, progress_tracker_path, 10
-    )
-    for r in restaurant_list:
-        restaurant_search_queue.put(r)
+    try:
+        restaurant_list = get_restaurant_batch(
+            restaurant_json_path, progress_tracker_path, 10
+        )
+        for idx, r in enumerate(restaurant_list):
+            r["id"] = f"R{idx:04d}"  # Add unique identifier
+            restaurant_search_queue.put(r)
+            QueueLogger.log_task_progress(r, restaurant_search_queue, "ENQUEUED")
 
-    print("restaurant_search_queue size:", restaurant_search_queue.qsize())
+        logging.info(
+            f"🍴 Initialized with {len(restaurant_list)} restaurants in search queue"
+        )
 
-    # ------------------------------------------------------------
-    # ✅ STEP 2 SEARCH: Query each restaurant in a search engine → Output URLs to `url_validate_queue`
-    # ------------------------------------------------------------
-    start_workers(
-        restaurant_search_queue,
-        search_engine_search,  # Searches for restaurants
-        url_validate_queue,  # Sends found URLs to `url_validate_queue`
-        num_workers=3,
-        is_search_worker=True,  # Terminates workers if queue is empty
-    )
+        # ------------------------------------------------------------
+        # Pipeline Stages
+        # ------------------------------------------------------------
+        pipeline_stages = [
+            {
+                "name": "Search",
+                "input": restaurant_search_queue,
+                "processor": search_engine_search,
+                "output": url_validate_queue,
+                "workers": 1,
+                "search_worker": True,
+            },
+            {
+                "name": "Validation",
+                "input": url_validate_queue,
+                "processor": validate_url,
+                "output": content_extraction_queue,
+                "workers": 2,
+            },
+            {
+                "name": "Extraction",
+                "input": content_extraction_queue,
+                "processor": extract_content,
+                "output": text_transformation_queue,
+                "workers": 2,
+            },
+            {
+                "name": "Transformation",
+                "input": text_transformation_queue,
+                "processor": transform_data,
+                "output": data_loading_queue,
+                "workers": 2,
+            },
+            {
+                "name": "Loading",
+                "input": data_loading_queue,
+                "processor": load_data,
+                "output": {
+                    "restaurant_search_queue": restaurant_search_queue,
+                    "url_validate_queue": url_validate_queue,
+                },
+                "workers": 2,
+            },
+        ]
 
-    # ------------------------------------------------------------
-    # ✅ STEP 3 VALIDATE: Validate URLs → No output. (Valid URLs are sent to database)
-    # ------------------------------------------------------------
-    start_workers(
-        url_validate_queue,
-        validate_url,  # Extracts content from URLs
-        content_extraction_queue,  # No output
-        num_workers=5,
-    )
+        for stage in pipeline_stages:
+            logging.info(f"🚀 Starting {stage['name']} stage workers")
+            start_workers(
+                task_queue=stage["input"],
+                process_function=stage["processor"],
+                output_queues=stage["output"],
+                num_workers=stage["workers"],
+                is_search_worker=stage.get("search_worker", False),
+            )
 
-    # ------------------------------------------------------------
-    # ✅ STEP 4 EXTRACT: Receive valid URLs from database and extract content → Send content (url, priority, soup) to `text_transformation_queue`
-    # ------------------------------------------------------------
-    start_workers(
-        content_extraction_queue,
-        extract_content,  # Transforms extracted content
-        text_transformation_queue,  # Sends transformed data for loading
-        num_workers=5,
-    )
+        # Keep main thread alive
+        while True:
+            time.sleep(3600)  # Sleep for 1 hour
 
-    # ------------------------------------------------------------
-    # ✅ STEP 5 TRANSFORM: Transform data → Send processed content to `data_loading_queue`
-    # ------------------------------------------------------------
-    start_workers(
-        text_transformation_queue,
-        transform_data,  # Loads data into database
-        data_loading_queue,  # Sends results to `data_loading_queue`
-        num_workers=3,
-    )
-
-    # ------------------------------------------------------------
-    # ✅ STEP 6 LOAD: Load data → Decide whether to send to `restaurant_search_queue` or `url_validate_queue`
-    # ------------------------------------------------------------
-    start_workers(
-        data_loading_queue,
-        load_data,
-        {
-            "restaurant_search_queue": restaurant_search_queue,
-            "url_validate_queue": url_validate_queue,
-        },
-        num_workers=3,
-    )
-
-    print("🚀 ETL pipeline started! Press Ctrl+C to stop.")
+    except KeyboardInterrupt:
+        logging.info("\n🛑 Received shutdown signal. Cleaning up...")
+        for q in queues.values():
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                    q.task_done()
+                except queue.Empty:
+                    continue
+        logging.info("🧹 Queues cleared. Exiting safely.")
 
 
 if __name__ == "__main__":
