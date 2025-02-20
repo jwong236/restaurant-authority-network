@@ -160,4 +160,4 @@ cython_debug/
 #.idea/
 
 .backups/
-.src/pipeline/initialize/data/
+src/pipeline/initialize/data/

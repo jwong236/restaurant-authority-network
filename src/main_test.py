@@ -15,10 +15,10 @@ from pipeline.validate import validate_url
 from pipeline.extract import extract_content
 from pipeline.transform import transform_data
 from pipeline.load import load_data
+from utils.setup_logging import setup_logging
 
 load_dotenv()
-
-logging.basicConfig(level=logging.INFO, format="%(message)s")
+setup_logging(log_filename="pipeline.log", log_level=logging.INFO, log_to_console=True)
 
 queues = {
     "restaurant_search_queue": restaurant_search_queue,
@@ -30,93 +30,66 @@ queues = {
 
 
 def print_queue_contents():
-    """Displays the contents of each queue."""
+    logging.info(f"--- Queue States ---")
     for name, q in queues.items():
-        logging.info(f"📥 {name}: {list(q.queue)}")
+        logging.info(f"{name}: {list(q.queue)}")
+    logging.info(f"--------------------")
 
 
-def process_queue(stage_name, task_queue, processor):
-    """
-    Processes the tasks in the given queue using the provided processor function.
-    Each phase is responsible for enqueuing its own results into the next queue.
-    """
-    input(f"🔹 Press Enter to start the '{stage_name}' phase...")
-
+def process_queue(phase_name, task_queue, processor):
+    logging.info(f"--- Starting {phase_name} Phase ---")
     if task_queue.empty():
-        logging.info(f"⚠️ No tasks in {stage_name} queue. Skipping...")
+        logging.info(f"No tasks in {phase_name}, skipping.")
         return
-
-    logging.info(f"🚀 Processing {stage_name} phase...")
-
     while not task_queue.empty():
         try:
             task = task_queue.get_nowait()
             processor(task)
             task_queue.task_done()
-
         except queue.Empty:
             break
-
-    logging.info(f"✅ Finished {stage_name} phase.")
+    logging.info(f"Finished {phase_name} Phase.\n")
 
 
 def initialize(
     restaurant_json_path="michelin_restaurants.json",
     progress_tracker_path="progress_tracker.json",
 ):
-
     restaurant_list = get_restaurant_batch(
         restaurant_json_path, progress_tracker_path, 1
     )
-
     for r in restaurant_list:
         r["initial_search"] = True
         restaurant_search_queue.put(r)
-        logging.info(f"🍽️ Added to search queue: {r}")
-
-    logging.info(f"✅ Initialized with {len(restaurant_list)} restaurants.")
+        logging.info(f"Added to search queue: {r}")
+    logging.info(f"Initialized with {len(restaurant_list)} restaurants.")
 
 
 def main():
     restaurant_json_path = "michelin_restaurants.json"
     progress_tracker_path = "progress_tracker.json"
 
-    logging.info("🟢 Starting test mode with 1 worker per phase.")
-
+    logging.info("Starting pipeline with one worker per phase.")
     print_queue_contents()
+    input("Press Enter to begin...\n")
 
-    input("🔹 Press Enter to start the pipeline...")
-
-    # 🔹 Initialization Phase
     initialize(restaurant_json_path, progress_tracker_path)
     print_queue_contents()
-    input("🔹 Press Enter to proceed to the next phase...")
 
-    # 🔹 Search Phase - Functional
-    process_queue("Search", restaurant_search_queue, search_engine_search)
-    print_queue_contents()
-    input("🔹 Press Enter to proceed to the next phase...")
+    phase_flow = [
+        ("Search", restaurant_search_queue, search_engine_search),
+        ("Validation", url_validate_queue, validate_url),
+        ("Extraction", content_extraction_queue, extract_content),
+        ("Transformation", text_transformation_queue, transform_data),
+        ("Loading", data_loading_queue, load_data),
+    ]
 
-    # 🔹 Validation Phase -
-    process_queue("Validation", url_validate_queue, validate_url)
-    print_queue_contents()
-    input("🔹 Press Enter to proceed to the next phase...")
+    for phase_name, q, func in phase_flow:
+        input(f"Press Enter to run {phase_name}...\n")
+        process_queue(phase_name, q, func)
+        print_queue_contents()
 
-    # 🔹 Extraction Phase
-    process_queue("Extraction", content_extraction_queue, extract_content)
-    print_queue_contents()
-    input("🔹 Press Enter to proceed to the next phase...")
-
-    # 🔹 Transformation Phase
-    process_queue("Transformation", text_transformation_queue, transform_data)
-    print_queue_contents()
-    input("🔹 Press Enter to proceed to the next phase...")
-
-    # 🔹 Loading Phase
-    process_queue("Loading", data_loading_queue, load_data)
-    print_queue_contents()
-
-    logging.info("🏁 Test completed successfully!")
+    logging.info("All phases complete!")
 
 
 if __name__ == "__main__":
