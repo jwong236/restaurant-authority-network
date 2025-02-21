@@ -219,6 +219,18 @@ def get_url_priority_queue_length(conn):
         return 0
 
 
+def get_restaurant_priority_queue_length(conn):
+    """Get the number of restaurants in the priority queue."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM restaurant_priority_queue")
+            result = cur.fetchone()
+            return result[0] if result else 0
+    except Exception as e:
+        logging.error(f"Error getting restaurant priority queue length: {e}")
+        return 0
+
+
 def insert_into_url_priority_queue(url_id, priority, conn):
     """Insert a URL into the priority queue or update its priority."""
     try:
