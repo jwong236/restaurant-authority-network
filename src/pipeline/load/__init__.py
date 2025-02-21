@@ -90,8 +90,12 @@ def load_data(payload):
     target_url = payload["target_url"]
     relevance_score = payload["relevance_score"]
     derived_url_pairs = payload["derived_url_pairs"]
-    identified_restaurants = payload["identified_restaurants"]
-    rejected_restaurants = payload["rejected_restaurants"]
+    identified_restaurants = payload[
+        "identified_restaurants"
+    ]  # Valiated restaurants. Guaranteed to be in database
+    rejected_restaurants = payload[
+        "rejected_restaurants"
+    ]  # Restaurants that aren't in database. May still be valid
 
     conn = get_db_connection()
     processed_count = 0
@@ -109,36 +113,26 @@ def load_data(payload):
         if not url_id:
             logging.error(f"[{PHASE}]: Failed to load target URL: {target_url}")
             return
-
-        # Identify new restaurants
-        new_rest_list = []
-        skipped_count = 0
-        for i, restaurant in enumerate(identified_restaurants, 1):
-            exists_id = check_restaurant_exists(restaurant, conn)
+        logging.info(f"[{PHASE}]: Attempting to create references for target URL")
+        for i, restaurant in enumerate(identified_restaurants):
+            exists_id = check_restaurant_exists(
+                restaurant, conn
+            )  # TODO: Exact match is causing validated restaurant to not be found
+            logging.info(
+                f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Creating references for: {restaurant}"
+            )
             if exists_id:
+                load_reference(exists_id, url_id, conn, relevance_score)
                 logging.info(
-                    f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Skipping existing restaurant '{restaurant}'."
+                    f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Created reference for: {restaurant}"
                 )
-                skipped_count += 1
-                continue
-            new_rest_list.append(restaurant)
-
-        logging.info(
-            f"[{PHASE}]: Identified {len(new_rest_list)} new restaurants, skipping {skipped_count} existing."
-        )
-
-        # Insert new restaurants
-        new_rest_ids = load_identified_restaurants(new_rest_list, conn)
+            else:
+                logging.error(
+                    f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Validated restaurant was not found: {restaurant}"
+                )
 
         # Process rejected restaurants
         load_rejected_restaurants(rejected_restaurants, relevance_score, conn)
-
-        # Create references for new restaurants
-        for i, rid in enumerate(new_rest_ids, 1):
-            logging.info(
-                f"[{PHASE}]: ({i}/{len(new_rest_ids)}) Creating reference for restaurant ID {rid}"
-            )
-            load_reference(rid, url_id, conn, relevance_score)
 
         # Enqueue derived URLs for validation
         start_time = time.time()

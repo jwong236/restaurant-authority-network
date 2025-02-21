@@ -73,7 +73,7 @@ def process_task(phase_name, task_queue, func):
 def initialize(r_json="michelin_restaurants.json", progress="progress_tracker.json"):
     ph = "INITIALIZE"
     logging.info(f"[{ph}]: Fetching batch.")
-    rlist = get_restaurant_batch(r_json, progress, 5)
+    rlist = get_restaurant_batch(r_json, progress, 1)
     for r in rlist:
         r["initial_search"] = True
         search_queue.put(r)
