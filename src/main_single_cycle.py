@@ -32,13 +32,14 @@ queues = {
 
 
 def print_queue_contents(conn):
-    logging.info("")
-    logging.info("--- Queue States ---")
-    for name, q in queues.items():
-        logging.info(f"{name}: {len(q.queue)} tasks")
     url_count = get_url_priority_queue_length(conn)
     rest_count = get_restaurant_priority_queue_length(conn)
+    logging.info("\n--- Queue States ---")
+    logging.info(f"search_queue: {search_queue.qsize()} tasks")
+    logging.info(f"validate_queue: {validate_queue.qsize()} tasks")
     logging.info(f"extract_queue: {url_count} tasks")
+    logging.info(f"transform_queue: {transform_queue.qsize()} tasks")
+    logging.info(f"load_queue: {load_queue.qsize()} tasks")
     logging.info(f"verify_queue: {rest_count} tasks")
     logging.info("--------------------\n")
 
@@ -72,7 +73,7 @@ def process_task(phase_name, task_queue, func):
 def initialize(r_json="michelin_restaurants.json", progress="progress_tracker.json"):
     ph = "INITIALIZE"
     logging.info(f"[{ph}]: Fetching batch.")
-    rlist = get_restaurant_batch(r_json, progress, 20)
+    rlist = get_restaurant_batch(r_json, progress, 5)
     for r in rlist:
         r["initial_search"] = True
         search_queue.put(r)

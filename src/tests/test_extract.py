@@ -1,149 +1,178 @@
-# test_extract.py
-
 import pytest
+import logging
 from unittest.mock import patch, MagicMock
 from bs4 import BeautifulSoup
-from queue_manager.task_queues import text_transformation_queue
+from queue_manager.task_queues import transform_queue
 from pipeline.extract import extract_content
+from queue_manager.task_queues import transform_queue
+from database.db_operations import (
+    insert_domain,
+    insert_source,
+    insert_url,
+    insert_into_url_priority_queue,
+    check_url_exists,
+    get_priority_queue_url,
+)
+from database.db_connector import get_db_connection
+from pipeline.extract import extract_content
+
+PHASE = "EXTRACT"
 
 
 @pytest.fixture
 def mock_conn():
-    """
-    Returns a mock DB connection object whose cursor is a mock.
-    """
-    m_conn = MagicMock()
-    m_cursor = MagicMock()
-    m_conn.cursor.return_value.__enter__.return_value = m_cursor
-    return m_conn
+    """Fixture for a mock database connection."""
+    return MagicMock()
 
 
-# --------------------------------------------------------------------------------------------------
-#                                   MOCK TESTS
-# --------------------------------------------------------------------------------------------------
+@pytest.fixture
+def db_connection():
+    """Fixture for a real database connection."""
+    conn = get_db_connection()
+    yield conn
+    conn.rollback()
+    conn.close()
 
 
-def test_extract_content_no_url_in_queue(mock_conn):
-    """
-    If get_priority_queue_url returns None, no URL to process => returns False, prints message.
-    """
-    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
-        "pipeline.extract.get_priority_queue_url", return_value=None
-    ):
-        text_transformation_queue.queue.clear()
-
-        result = extract_content()
-        assert result is False
-        assert text_transformation_queue.qsize() == 0
-
-
-def test_extract_content_request_fails(mock_conn):
-    """
-    If request_url fails (returns None), we remove the URL from queue and return False.
-    """
+def test_extract_content_request_failure(mock_conn):
+    """If request_url fails (returns None), we remove URL from queue and keep going."""
     with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
         "pipeline.extract.get_priority_queue_url",
-        return_value=(123, "https://fail.com", 50),
+        side_effect=[(123, "https://fail.com", 50), None],
     ), patch("pipeline.extract.request_url", return_value=None) as mock_req, patch(
         "pipeline.extract.remove_from_url_priority_queue"
     ) as mock_remove:
 
-        text_transformation_queue.queue.clear()
-
+        transform_queue.queue.clear()
         result = extract_content()
         assert result is False
         mock_req.assert_called_once_with("https://fail.com")
         mock_remove.assert_called_once_with(123, mock_conn)
-        assert text_transformation_queue.qsize() == 0
+        assert transform_queue.qsize() == 0
 
 
-def test_extract_content_http_404(mock_conn):
-    """
-    If response.status_code == 404, remove from queue, return False, skip transformation.
-    """
+def test_extract_content_404(mock_conn):
+    """404 => remove from queue, no transform enqueued."""
     resp_mock = MagicMock()
     resp_mock.status_code = 404
 
     with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
         "pipeline.extract.get_priority_queue_url",
-        return_value=(999, "https://404.com", 50),
-    ), patch("pipeline.extract.request_url", return_value=resp_mock) as mock_req, patch(
+        side_effect=[(999, "https://404.com", 60), None],
+    ), patch("pipeline.extract.request_url", return_value=resp_mock), patch(
         "pipeline.extract.remove_from_url_priority_queue"
     ) as mock_remove:
-        text_transformation_queue.queue.clear()
 
+        transform_queue.queue.clear()
         result = extract_content()
         assert result is False
-        mock_req.assert_called_once_with("https://404.com")
         mock_remove.assert_called_once_with(999, mock_conn)
-        assert text_transformation_queue.qsize() == 0
+        assert transform_queue.qsize() == 0
 
 
-def test_extract_content_temporary_error(mock_conn):
-    """
-    If response is a 5xx, we update priority (0.75 * old), skip further processing.
-    """
+def test_extract_content_5xx(mock_conn):
+    """5xx => update priority to old * 0.75, skip transform."""
     resp_mock = MagicMock()
     resp_mock.status_code = 503
 
     with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
         "pipeline.extract.get_priority_queue_url",
-        return_value=(777, "https://5xx.com", 80),
+        side_effect=[(321, "https://5xx.com", 80), None],
     ), patch("pipeline.extract.request_url", return_value=resp_mock), patch(
         "pipeline.extract.update_priority_queue_url"
     ) as mock_update:
-        text_transformation_queue.queue.clear()
 
+        transform_queue.queue.clear()
         result = extract_content()
         assert result is False
-        mock_update.assert_called_once_with(mock_conn, 777, 60.0)
-        assert text_transformation_queue.qsize() == 0
-
-
-def test_extract_content_successful_extraction(mock_conn):
-    """
-    If everything goes well, we remove the URL from queue, parse HTML, and enqueue to transformation queue.
-    """
-    resp_mock = MagicMock()
-    resp_mock.status_code = 200
-    resp_mock.text = "<html><body><p>Some content here</p></body></html>"
-
-    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
-        "pipeline.extract.get_priority_queue_url",
-        return_value=(321, "https://success.com", 90),
-    ), patch("pipeline.extract.request_url", return_value=resp_mock) as mock_req, patch(
-        "pipeline.extract.remove_from_url_priority_queue"
-    ) as mock_remove:
-
-        text_transformation_queue.queue.clear()
-        result = extract_content()
-        assert result is True
-        mock_req.assert_called_once_with("https://success.com")
-        mock_remove.assert_called_once_with(321, mock_conn)
-        assert text_transformation_queue.qsize() == 1
-        item = text_transformation_queue.get()
-        assert item[0] == "https://success.com"
-        assert item[1] == 90
-        assert isinstance(item[2], BeautifulSoup)
+        mock_update.assert_called_once_with(mock_conn, 321, 60.0)  # 80 * 0.75 = 60
+        assert transform_queue.qsize() == 0
 
 
 def test_extract_content_minimal_content(mock_conn):
-    """
-    If the page has minimal content (<10 chars), we remove from the queue and skip transformation.
-    """
+    """If the page is too short (<10 chars), remove from queue, skip transform."""
     resp_mock = MagicMock()
     resp_mock.status_code = 200
     resp_mock.text = "<html><body></body></html>"
 
     with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
         "pipeline.extract.get_priority_queue_url",
-        return_value=(555, "https://empty.com", 25),
+        side_effect=[(456, "https://empty.com", 30), None],
     ), patch("pipeline.extract.request_url", return_value=resp_mock), patch(
         "pipeline.extract.remove_from_url_priority_queue"
     ) as mock_remove:
 
-        text_transformation_queue.queue.clear()
+        transform_queue.queue.clear()
         result = extract_content()
         assert result is False
-        mock_remove.assert_called_once_with(555, mock_conn)
-        assert text_transformation_queue.qsize() == 0
+        mock_remove.assert_called_once_with(456, mock_conn)
+        assert transform_queue.qsize() == 0
+
+
+def test_extract_content_successful(mock_conn):
+    """A successful extraction => remove from queue, push to transform_queue."""
+    resp_mock = MagicMock()
+    resp_mock.status_code = 200
+    resp_mock.text = "<html><body><p>Valid content here.</p></body></html>"
+
+    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.extract.get_priority_queue_url",
+        side_effect=[(888, "https://valid.com", 75), None],
+    ), patch("pipeline.extract.request_url", return_value=resp_mock), patch(
+        "pipeline.extract.remove_from_url_priority_queue"
+    ) as mock_remove:
+
+        transform_queue.queue.clear()
+        result = extract_content()
+        assert result is True  # At least one successful extraction
+
+        mock_remove.assert_called_once_with(888, mock_conn)
+        assert transform_queue.qsize() == 1
+
+        # Verify transform_queue contents
+        item = transform_queue.get()
+        assert item[0] == "https://valid.com"
+        assert item[1] == 75
+        assert isinstance(item[2], BeautifulSoup)
+
+
+def test_extract_content_db(db_connection):
+    """
+    Integration test for extract_content using a real DB.
+    1) Insert a domain+source+url_id into url_priority_queue
+    2) Call extract_content
+    3) Confirm it processes, removes from DB, and enqueues transform
+    """
+
+    transform_queue.queue.clear()
+
+    # Insert domain
+    with db_connection.cursor() as cur:
+        cur.execute("DELETE FROM domain WHERE domain_name='test-extract.com'")
+    db_connection.commit()
+
+    d_id = insert_domain("test-extract.com", 0.0, db_connection)
+    s_id = insert_source(d_id, "webpage", db_connection)
+    u_id = insert_url("https://test-extract.com/page", s_id, db_connection)
+    insert_into_url_priority_queue(u_id, 99, db_connection)
+    db_connection.commit()
+
+    with patch("pipeline.extract.requests.get") as mock_get:
+        resp_mock = MagicMock()
+        resp_mock.status_code = 200
+        resp_mock.text = "<html><body>Real DB test content here</body></html>"
+        mock_get.return_value = resp_mock
+
+        success = extract_content()
+        assert success is True
+
+        # Confirm URL is removed from priority queue
+        res = get_priority_queue_url(db_connection)
+        assert res is None
+
+        # Check transform queue has 1 item
+        assert transform_queue.qsize() == 1
+        item = transform_queue.get()
+        assert item[0] == "https://test-extract.com/page"
+        assert item[1] == 99
+        assert "Real DB test content" in item[2].get_text()

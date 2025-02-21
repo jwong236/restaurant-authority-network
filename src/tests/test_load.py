@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from queue_manager.task_queues import url_validate_queue
+from queue_manager.task_queues import validate_queue
 from database.db_connector import get_db_connection
 from pipeline.load import (
     load_data,
@@ -12,10 +12,7 @@ from pipeline.load import (
 
 @pytest.fixture
 def mock_conn():
-    """
-    Returns a mock DB connection object whose cursor is also a mock,
-    for use in mock-based tests.
-    """
+    """Returns a mock DB connection object whose cursor is also a mock."""
     m_conn = MagicMock()
     m_cursor = MagicMock()
     m_conn.cursor.return_value.__enter__.return_value = m_cursor
@@ -46,15 +43,15 @@ def test_load_identified_restaurants_mock(mock_conn):
 
     with patch("pipeline.load.insert_restaurant") as mock_insert:
         mock_insert.side_effect = [101, None, 202]
-        input_data = [
-            {"name": "R1", "address": "Addr1"},
-            {"name": "R2", "address": "Addr2"},
-            {"name": "R3", "address": "Addr3"},
-        ]
+        input_data = ["R1", "R2", "R3"]
 
         result = load_identified_restaurants(input_data, mock_conn)
         assert result == [101, 202]
         assert mock_insert.call_count == 3
+
+        mock_insert.assert_any_call("R1", None, mock_conn)
+        mock_insert.assert_any_call("R2", None, mock_conn)
+        mock_insert.assert_any_call("R3", None, mock_conn)
 
 
 def test_load_rejected_restaurants_mock(mock_conn):
@@ -86,16 +83,13 @@ def test_load_data_mock(mock_conn):
         "target_url": "https://target.com",
         "relevance_score": 0.7,
         "derived_url_pairs": [("https://deriv1.com", 0.3), ("https://deriv2.com", 0.9)],
-        "identified_restaurants": [
-            {"name": "R1", "address": "A1"},
-            {"name": "Existing Resto", "address": "????"},
-        ],
+        "identified_restaurants": ["R1", "Existing Resto"],
         "rejected_restaurants": ["Bad R1", "Bad R2"],
     }
 
-    with patch(
-        "pipeline.load.get_db_connection", return_value=mock_conn
-    ) as mock_get_db, patch("pipeline.load.check_url_exists") as mock_check_url, patch(
+    with patch("pipeline.load.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.load.check_url_exists"
+    ) as mock_check_url, patch(
         "pipeline.load.check_restaurant_exists"
     ) as mock_check_rest, patch(
         "pipeline.load.insert_restaurant"
@@ -113,7 +107,7 @@ def test_load_data_mock(mock_conn):
         mock_insert_rest.return_value = 888
         mock_insert_ref.return_value = 777
 
-        url_validate_queue.queue.clear()
+        validate_queue.queue.clear()
 
         load_data(payload)
 
@@ -123,7 +117,7 @@ def test_load_data_mock(mock_conn):
         mock_check_rest.assert_any_call("R1", mock_conn)
         mock_check_rest.assert_any_call("Existing Resto", mock_conn)
 
-        mock_insert_rest.assert_called_once_with("R1", "A1", mock_conn)
+        mock_insert_rest.assert_called_once_with("R1", None, mock_conn)
 
         mock_insert_ref.assert_called_once_with(888, 999, 0.7, mock_conn)
 
@@ -131,9 +125,9 @@ def test_load_data_mock(mock_conn):
         mock_insert_rpq.assert_any_call("Bad R1", 70.0, mock_conn)
         mock_insert_rpq.assert_any_call("Bad R2", 70.0, mock_conn)
 
-        assert url_validate_queue.qsize() == 2
+        assert validate_queue.qsize() == 2
         queued = []
-        while not url_validate_queue.empty():
-            queued.append(url_validate_queue.get())
+        while not validate_queue.empty():
+            queued.append(validate_queue.get())
         assert ("https://deriv1.com", 0.3) in queued
         assert ("https://deriv2.com", 0.9) in queued

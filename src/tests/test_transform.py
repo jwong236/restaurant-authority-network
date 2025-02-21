@@ -2,11 +2,11 @@ import pytest
 from unittest.mock import patch, MagicMock
 from bs4 import BeautifulSoup
 from pipeline.transform import transform_data
-from queue_manager.task_queues import data_loading_queue
+from queue_manager.task_queues import load_queue
 
 
 def test_transform_data_weighted():
-    data_loading_queue.queue.clear()
+    load_queue.queue.clear()
 
     html = """
     <html>
@@ -30,8 +30,8 @@ def test_transform_data_weighted():
 
         transform_data(("https://example.com/page", 40, soup))
 
-    assert data_loading_queue.qsize() == 1
-    payload = data_loading_queue.get()
+    assert load_queue.qsize() == 1
+    payload = load_queue.get()
     assert payload["target_url"] == "https://example.com/page"
     assert 0 <= payload["relevance_score"] <= 100
     derived = payload["derived_url_pairs"]

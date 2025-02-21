@@ -1,6 +1,6 @@
 import logging
+import time
 from urllib.parse import urlparse
-
 from database.db_connector import get_db_connection
 from database.db_operations import (
     check_restaurant_exists,
@@ -32,30 +32,48 @@ def adjust_domain_quality(old_score, relevance):
 def load_identified_restaurants(identified_restaurants, conn):
     """Loads validated restaurants into the database."""
     ids = []
-    for r_dict in identified_restaurants:
-        r_name = r_dict.get("name", "")
-        r_addr = r_dict.get("address", "")
-        logging.info(f"[{PHASE}]: Inserting new restaurant: {r_name}")
-        rest_id = insert_restaurant(r_name, r_addr, conn)
+    start_time = time.time()
+
+    for i, restaurant in enumerate(identified_restaurants, 1):
+        logging.info(
+            f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Inserting: {restaurant}"
+        )
+        rest_id = insert_restaurant(restaurant, None, conn)
+
         if rest_id:
             ids.append(rest_id)
         else:
-            logging.warning(f"[{PHASE}]: Failed to insert restaurant {r_name}")
+            logging.warning(f"[{PHASE}]: Failed to insert restaurant {restaurant}")
+
+    elapsed_time = time.time() - start_time
+    logging.info(
+        f"[{PHASE}]: Inserted {len(ids)} new restaurants in {elapsed_time:.2f}s."
+    )
     return ids
 
 
 def load_rejected_restaurants(rejected_restaurants, relevance_score, conn):
     """Adds rejected restaurants to the priority queue with adjusted scores."""
-    for rejected in rejected_restaurants:
-        insert_into_restaurant_priority_queue(rejected, relevance_score * 100, conn)
+    start_time = time.time()
+
+    for i, rejected in enumerate(rejected_restaurants, 1):
+        priority_score = relevance_score * 100
         logging.info(
-            f"[{PHASE}]: Rejected restaurant '{rejected}', added to priority queue with priority {relevance_score * 100:.2f}"
+            f"[{PHASE}]: ({i}/{len(rejected_restaurants)}) Adding '{rejected}' to priority queue with priority {priority_score:.2f}"
         )
+        insert_into_restaurant_priority_queue(rejected, priority_score, conn)
+
+    elapsed_time = time.time() - start_time
+    logging.info(
+        f"[{PHASE}]: Processed {len(rejected_restaurants)} rejected restaurants in {elapsed_time:.2f}s."
+    )
 
 
 def load_reference(restaurant_id, url_id, conn, relevance=0.9):
     """Links a restaurant to a reference URL in the database."""
-    logging.info(f"[{PHASE}]: Linking restaurant {restaurant_id} with URL {url_id}")
+    logging.info(
+        f"[{PHASE}]: Linking restaurant {restaurant_id} with URL {url_id} (Relevance: {relevance})"
+    )
     return insert_reference(restaurant_id, url_id, relevance, conn)
 
 
@@ -79,10 +97,14 @@ def load_data(payload):
     processed_count = 0
 
     try:
+        logging.info(
+            f"[{PHASE}]: ------------------ STARTING LOAD PHASE ------------------"
+        )
         logging.info(f"[{PHASE}]: Processing data for {target_url}")
+        logging.info(f"[{PHASE}]: BEGIN TRANSACTION")
 
         # Check if target URL exists
-        logging.info(f"[{PHASE}]: Checking existence of target URL: {target_url}")
+        logging.info(f"[{PHASE}]: Checking if target URL exists: {target_url}")
         url_id = check_url_exists(target_url, conn)
         if not url_id:
             logging.error(f"[{PHASE}]: Failed to load target URL: {target_url}")
@@ -91,14 +113,15 @@ def load_data(payload):
         # Identify new restaurants
         new_rest_list = []
         skipped_count = 0
-        for r_obj in identified_restaurants:
-            name = r_obj.get("name", "")
-            exists_id = check_restaurant_exists(name, conn)
+        for i, restaurant in enumerate(identified_restaurants, 1):
+            exists_id = check_restaurant_exists(restaurant, conn)
             if exists_id:
-                logging.info(f"[{PHASE}]: Restaurant '{name}' exists, skipping.")
+                logging.info(
+                    f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Skipping existing restaurant '{restaurant}'."
+                )
                 skipped_count += 1
                 continue
-            new_rest_list.append(r_obj)
+            new_rest_list.append(restaurant)
 
         logging.info(
             f"[{PHASE}]: Identified {len(new_rest_list)} new restaurants, skipping {skipped_count} existing."
@@ -106,34 +129,39 @@ def load_data(payload):
 
         # Insert new restaurants
         new_rest_ids = load_identified_restaurants(new_rest_list, conn)
-        logging.info(f"[{PHASE}]: Inserted {len(new_rest_ids)} new restaurants.")
 
         # Process rejected restaurants
         load_rejected_restaurants(rejected_restaurants, relevance_score, conn)
-        logging.info(
-            f"[{PHASE}]: Processed {len(rejected_restaurants)} rejected restaurants."
-        )
 
         # Create references for new restaurants
-        for rid in new_rest_ids:
+        for i, rid in enumerate(new_rest_ids, 1):
+            logging.info(
+                f"[{PHASE}]: ({i}/{len(new_rest_ids)}) Creating reference for restaurant ID {rid}"
+            )
             load_reference(rid, url_id, conn, relevance_score)
 
-        conn.commit()
-        logging.info(f"[{PHASE}]: Data load committed successfully.")
-
         # Enqueue derived URLs for validation
-        for new_url, new_rel_score in derived_url_pairs:
+        start_time = time.time()
+        for i, (new_url, new_rel_score) in enumerate(derived_url_pairs, 1):
+            logging.info(
+                f"[{PHASE}]: ({i}/{len(derived_url_pairs)}) Enqueuing derived URL: {new_url} with relevance {new_rel_score}"
+            )
             validate_queue.put((new_url, new_rel_score))
-
+        elapsed_time = time.time() - start_time
         logging.info(
-            f"[{PHASE}]: Enqueued {len(derived_url_pairs)} derived URLs for validation."
+            f"[{PHASE}]: Enqueued {len(derived_url_pairs)} derived URLs in {elapsed_time:.2f}s."
         )
+
+        conn.commit()
+        logging.info(f"[{PHASE}]: COMMIT TRANSACTION (All data saved successfully)")
         processed_count += 1
 
     except Exception as e:
-        logging.error(f"[{PHASE}]: Error loading data: {e}", exc_info=True)
+        logging.error(f"[{PHASE}]: ERROR: {e}", exc_info=True)
+        logging.info(f"[{PHASE}]: ROLLBACK TRANSACTION (Undoing changes due to error)")
         conn.rollback()
     finally:
         conn.close()
+        logging.info(f"[{PHASE}]: Connection closed.")
         logging.info(f"[{PHASE}]: Completed. Processed {processed_count} tasks.")
         print(f"[{PHASE}]: Completed. Processed {processed_count} tasks.")
