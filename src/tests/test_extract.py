@@ -1,156 +1,149 @@
+# test_extract.py
+
 import pytest
-from unittest.mock import MagicMock, patch
-from pipeline.extract import reprioritize_url, extract_content
+from unittest.mock import patch, MagicMock
+from bs4 import BeautifulSoup
+from queue_manager.task_queues import text_transformation_queue
+from pipeline.extract import extract_content
 
 
 @pytest.fixture
-def long_html_content():
-    """Fixture to generate an HTML document with more than 100 words."""
-    return """
-        <html>
-        <body>
-            <h1 class="title">Gourmet Ramen Spot</h1>
-            <div class="review">
-                This is a detailed review about an amazing ramen shop. 
-                The broth was rich and flavorful, with deep umami notes. 
-                The noodles were perfectly cooked, maintaining a slight chewiness that complemented the broth well. 
-                The toppings, including chashu pork and a soft-boiled egg, were expertly prepared. 
-                Each bite provided a harmonious balance of flavors and textures. 
-                The ambiance of the restaurant was warm and welcoming, making it an enjoyable dining experience. 
-                The staff was attentive, ensuring that every guest felt taken care of. 
-                Additionally, the menu offered a variety of ramen styles, catering to different preferences. 
-                Overall, this place is a must-visit for ramen lovers. The price point was reasonable, 
-                considering the high-quality ingredients used. The location was convenient, 
-                situated in the heart of the city. Would definitely recommend!
-            </div>
-            <div class="rating">4.8/5</div>
-        </body>
-        </html>
+def mock_conn():
     """
+    Returns a mock DB connection object whose cursor is a mock.
+    """
+    m_conn = MagicMock()
+    m_cursor = MagicMock()
+    m_conn.cursor.return_value.__enter__.return_value = m_cursor
+    return m_conn
 
 
-@pytest.fixture
-def mock_db():
-    """Fixture to mock database connection and cursor."""
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_conn.cursor.return_value = mock_cursor
-    return mock_conn, mock_cursor
+# --------------------------------------------------------------------------------------------------
+#                                   MOCK TESTS
+# --------------------------------------------------------------------------------------------------
 
 
-@patch("pipeline.extract.get_db_connection")
-@patch("pipeline.extract.request_url")
-@patch("pipeline.extract.get_priority_queue_url")
-@patch("pipeline.extract.remove_priority_queue_url")
-def test_extract_content_success(
-    mock_remove_url,
-    mock_get_priority,
-    mock_request,
-    mock_get_db,
-    long_html_content,
-):
-    """Test successful extraction with a long and valid food review."""
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_get_db.return_value = mock_conn
-    mock_conn.cursor.return_value = mock_cursor
+def test_extract_content_no_url_in_queue(mock_conn):
+    """
+    If get_priority_queue_url returns None, no URL to process => returns False, prints message.
+    """
+    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.extract.get_priority_queue_url", return_value=None
+    ):
+        text_transformation_queue.queue.clear()
 
-    mock_get_priority.return_value = ("https://example.com", 10)
-    mock_request.return_value.text = long_html_content
-
-    result = extract_content()
-
-    assert result is not None
-    mock_remove_url.assert_called_once_with("https://example.com", mock_cursor)
+        result = extract_content()
+        assert result is False
+        assert text_transformation_queue.qsize() == 0
 
 
-@patch("pipeline.extract.get_db_connection")
-@patch("pipeline.extract.request_url")
-@patch("pipeline.extract.get_priority_queue_url")
-def test_extract_content_empty_page(mock_get_priority, mock_request, mock_get_db):
-    """Test handling of an empty or useless page."""
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_get_db.return_value = mock_conn
-    mock_conn.cursor.return_value = mock_cursor
+def test_extract_content_request_fails(mock_conn):
+    """
+    If request_url fails (returns None), we remove the URL from queue and return False.
+    """
+    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.extract.get_priority_queue_url",
+        return_value=(123, "https://fail.com", 50),
+    ), patch("pipeline.extract.request_url", return_value=None) as mock_req, patch(
+        "pipeline.extract.remove_from_url_priority_queue"
+    ) as mock_remove:
 
-    mock_get_priority.return_value = ("https://example.com", 10)
-    mock_request.return_value.text = "<html><body></body></html>"
+        text_transformation_queue.queue.clear()
 
-    result = extract_content()
-
-    assert result is None  # Should return None for empty content
-
-
-@patch("pipeline.extract.get_db_connection")
-@patch("pipeline.extract.request_url")
-@patch("pipeline.extract.get_priority_queue_url")
-def test_extract_content_failed_request(mock_get_priority, mock_request, mock_get_db):
-    """Test handling of a failed request (e.g., 404 error)."""
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_get_db.return_value = mock_conn
-    mock_conn.cursor.return_value = mock_cursor
-
-    mock_get_priority.return_value = ("https://example.com", 10)
-    mock_request.return_value = None  # Simulating a failed request
-
-    result = extract_content()
-
-    assert result is None  # Should return None if the request fails
+        result = extract_content()
+        assert result is False
+        mock_req.assert_called_once_with("https://fail.com")
+        mock_remove.assert_called_once_with(123, mock_conn)
+        assert text_transformation_queue.qsize() == 0
 
 
-@patch("pipeline.extract.get_db_connection")
-@patch("pipeline.extract.get_priority_queue_url")
-def test_extract_content_database_failure(mock_get_priority, mock_get_db):
-    """Test handling of a database failure."""
-    mock_conn = MagicMock()
-    mock_cursor = MagicMock()
-    mock_get_db.return_value = mock_conn
-    mock_conn.cursor.return_value = mock_cursor
+def test_extract_content_http_404(mock_conn):
+    """
+    If response.status_code == 404, remove from queue, return False, skip transformation.
+    """
+    resp_mock = MagicMock()
+    resp_mock.status_code = 404
 
-    mock_get_priority.side_effect = Exception("DB Error")  # Force database error
+    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.extract.get_priority_queue_url",
+        return_value=(999, "https://404.com", 50),
+    ), patch("pipeline.extract.request_url", return_value=resp_mock) as mock_req, patch(
+        "pipeline.extract.remove_from_url_priority_queue"
+    ) as mock_remove:
+        text_transformation_queue.queue.clear()
 
-    result = extract_content()  # Function should gracefully handle errors
+        result = extract_content()
+        assert result is False
+        mock_req.assert_called_once_with("https://404.com")
+        mock_remove.assert_called_once_with(999, mock_conn)
+        assert text_transformation_queue.qsize() == 0
 
-    assert result is None  # Should return None instead of raising an exception
 
+def test_extract_content_temporary_error(mock_conn):
+    """
+    If response is a 5xx, we update priority (0.75 * old), skip further processing.
+    """
+    resp_mock = MagicMock()
+    resp_mock.status_code = 503
 
-@pytest.mark.parametrize(
-    "status_code, expected_priority, expected_remove",
-    [
-        (404, None, True),  # 404 → Remove from queue
-        (403, 7.5, False),  # 403 → Lower priority (×0.75)
-        (500, 7.5, False),  # 500 → Lower priority (×0.75)
-        (502, 7.5, False),  # 502 → Lower priority (×0.75)
-        (503, 7.5, False),  # 503 → Lower priority (×0.75)
-        (504, 7.5, False),  # 504 → Lower priority (×0.75)
-        (200, None, False),  # 200 → No priority change
-    ],
-)
-def test_reprioritize_url(mock_db, status_code, expected_priority, expected_remove):
-    """Test reprioritization logic for various response codes."""
-    mock_conn, mock_cursor = mock_db
-    url = "https://example.com"
-    priority = 10
-    mock_response = MagicMock()
-    mock_response.status_code = status_code
-
-    with patch(
+    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.extract.get_priority_queue_url",
+        return_value=(777, "https://5xx.com", 80),
+    ), patch("pipeline.extract.request_url", return_value=resp_mock), patch(
         "pipeline.extract.update_priority_queue_url"
-    ) as mock_update_priority, patch(
-        "pipeline.extract.remove_priority_queue_url"
-    ) as mock_remove_priority:
+    ) as mock_update:
+        text_transformation_queue.queue.clear()
 
-        result = reprioritize_url(url, priority, mock_response, mock_cursor)
+        result = extract_content()
+        assert result is False
+        mock_update.assert_called_once_with(mock_conn, 777, 60.0)
+        assert text_transformation_queue.qsize() == 0
 
-        if expected_remove:
-            mock_remove_priority.assert_called_once_with(url, mock_cursor)
-            assert result is None
-        elif expected_priority:
-            mock_update_priority.assert_called_once_with(
-                mock_cursor, url, expected_priority
-            )
-            assert result is None
-        else:
-            assert result == mock_response  # 200 case → should return response as-is
+
+def test_extract_content_successful_extraction(mock_conn):
+    """
+    If everything goes well, we remove the URL from queue, parse HTML, and enqueue to transformation queue.
+    """
+    resp_mock = MagicMock()
+    resp_mock.status_code = 200
+    resp_mock.text = "<html><body><p>Some content here</p></body></html>"
+
+    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.extract.get_priority_queue_url",
+        return_value=(321, "https://success.com", 90),
+    ), patch("pipeline.extract.request_url", return_value=resp_mock) as mock_req, patch(
+        "pipeline.extract.remove_from_url_priority_queue"
+    ) as mock_remove:
+
+        text_transformation_queue.queue.clear()
+        result = extract_content()
+        assert result is True
+        mock_req.assert_called_once_with("https://success.com")
+        mock_remove.assert_called_once_with(321, mock_conn)
+        assert text_transformation_queue.qsize() == 1
+        item = text_transformation_queue.get()
+        assert item[0] == "https://success.com"
+        assert item[1] == 90
+        assert isinstance(item[2], BeautifulSoup)
+
+
+def test_extract_content_minimal_content(mock_conn):
+    """
+    If the page has minimal content (<10 chars), we remove from the queue and skip transformation.
+    """
+    resp_mock = MagicMock()
+    resp_mock.status_code = 200
+    resp_mock.text = "<html><body></body></html>"
+
+    with patch("pipeline.extract.get_db_connection", return_value=mock_conn), patch(
+        "pipeline.extract.get_priority_queue_url",
+        return_value=(555, "https://empty.com", 25),
+    ), patch("pipeline.extract.request_url", return_value=resp_mock), patch(
+        "pipeline.extract.remove_from_url_priority_queue"
+    ) as mock_remove:
+
+        text_transformation_queue.queue.clear()
+        result = extract_content()
+        assert result is False
+        mock_remove.assert_called_once_with(555, mock_conn)
+        assert text_transformation_queue.qsize() == 0

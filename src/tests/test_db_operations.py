@@ -21,6 +21,7 @@ from database.db_operations import (
     # Reference
     insert_reference,
     # Priority Queues
+    get_url_priority_queue_length,
     insert_into_url_priority_queue,
     insert_into_restaurant_priority_queue,
     remove_from_url_priority_queue,
@@ -191,6 +192,14 @@ def test_insert_reference_mock(mock_conn):
 
 
 # ---------------- PRIORITY QUEUE ----------------
+def test_get_url_priority_queue_length_mock(mock_conn):
+    c = mock_conn.cursor.return_value.__enter__.return_value
+    c.fetchone.return_value = (5,)
+    count = get_url_priority_queue_length(mock_conn)
+    c.execute.assert_called_once_with("SELECT COUNT(*) FROM url_priority_queue")
+    assert count == 5
+
+
 def test_insert_into_url_priority_queue_mock(mock_conn):
     c = mock_conn.cursor.return_value.__enter__.return_value
     insert_into_url_priority_queue(1, 50, mock_conn)
@@ -212,13 +221,30 @@ def test_insert_into_restaurant_priority_queue_mock(mock_conn):
 
 
 def test_get_priority_queue_url_mock(mock_conn):
+    """Test get_priority_queue_url() using a mock database connection."""
     c = mock_conn.cursor.return_value.__enter__.return_value
-    c.fetchone.return_value = (999, 88)
+    c.fetchone.return_value = (999, "https://mockurl.com", 88)
     r = get_priority_queue_url(mock_conn)
-    c.execute.assert_called_once_with(
-        "SELECT url_id, priority FROM url_priority_queue ORDER BY priority DESC LIMIT 1 FOR UPDATE"
-    )
-    assert r == (999, 88)
+
+    actual_query = c.execute.call_args[0][0].strip()
+    expected_query = """
+                SELECT url.id, url.full_url, url_priority_queue.priority
+                FROM url_priority_queue
+                JOIN url ON url.id = url_priority_queue.url_id
+                ORDER BY url_priority_queue.priority DESC
+                LIMIT 1
+                FOR UPDATE
+                """.strip()
+
+    assert r is not None
+    assert r == (999, "https://mockurl.com", 88)
+
+    assert (
+        actual_query == expected_query
+    ), f"Query mismatch:\nExpected:\n{expected_query}\nActual:\n{actual_query}"
+
+    assert r is not None
+    assert r == (999, "https://mockurl.com", 88)
 
 
 def test_get_priority_queue_restaurant_mock(mock_conn):
@@ -450,6 +476,26 @@ def test_insert_reference_db(db_connection):
 
 
 # ---------------- PRIORITY QUEUES ----------------
+def test_get_url_priority_queue_length_db(db_connection):
+    # Insert domain/source/url for a valid url_id
+    d_id = insert_domain("queue-test.com", 0.0, db_connection)
+    s_id = insert_source(d_id, "webpage", db_connection)
+    u_id = insert_url("https://queue-test.com", s_id, db_connection)
+
+    insert_into_url_priority_queue(u_id, 10, db_connection)
+
+    count = get_url_priority_queue_length(db_connection)
+    assert count == 1
+
+    # Cleanup
+    with db_connection.cursor() as cur:
+        cur.execute("DELETE FROM url_priority_queue WHERE url_id = %s", (u_id,))
+        cur.execute("DELETE FROM url WHERE id = %s", (u_id,))
+        cur.execute("DELETE FROM source WHERE id = %s", (s_id,))
+        cur.execute("DELETE FROM domain WHERE id = %s", (d_id,))
+    db_connection.commit()
+
+
 def test_insert_into_url_priority_queue_db(db_connection):
     d = insert_domain("pq-url.com", 0.2, db_connection)
     s = insert_source(d, "pq-src", db_connection)
@@ -489,7 +535,12 @@ def test_get_priority_queue_url_db(db_connection):
     insert_into_url_priority_queue(u1, 10, db_connection)
     insert_into_url_priority_queue(u2, 80, db_connection)
     top = get_priority_queue_url(db_connection)
-    assert top == (u2, 80)
+
+    assert top is not None
+    assert top[0] == u2
+    assert top[1] == "https://getpqu2.com"
+    assert top[2] == 80
+
     with db_connection.cursor() as cur:
         cur.execute("DELETE FROM url_priority_queue WHERE url_id IN (%s, %s)", (u1, u2))
         cur.execute("DELETE FROM url WHERE id IN (%s, %s)", (u1, u2))

@@ -10,72 +10,82 @@ from queue_manager.task_queues import text_transformation_queue
 
 
 def request_url(url):
-    """Make a request to the URL and return the response object."""
+    """Request the URL with a user-agent, return a Response or None."""
+    headers = {"User-Agent": "MyUserAgent/1.0 (+https://github.com/jwong236)"}
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        return resp
     except requests.RequestException as e:
         print(f"Request failed for {url}: {e}")
         return None
 
 
-def reprioritize_url(url, priority, response, cur):
-    """Adjust priority based on response status code."""
+def handle_http_status(conn, url_id, priority, response):
+    """Handles HTTP status codes: removes, requeues, or continues processing."""
     status = response.status_code
-
     if status == 404:
-        print(f"Page not found (404). Removing {url} from queue.")
-        remove_from_url_priority_queue(url, cur)
-        return None
-    elif status in {403, 500, 502, 503, 504}:
-        new_priority = priority * 0.75
-        print(f"Temporary error ({status}). Reducing priority for {url}.")
-        update_priority_queue_url(cur, url, new_priority)
-        return None
-
-    return response
+        print(f"Page not found (404). Removing {url_id} from queue.")
+        remove_from_url_priority_queue(url_id, conn)
+        return False
+    elif 400 <= status < 500:
+        print(f"Client error ({status}). Removing {url_id}.")
+        remove_from_url_priority_queue(url_id, conn)
+        return False
+    elif status in {500, 502, 503, 504}:
+        new_priority = max(0, priority * 0.75)
+        print(f"Temporary error ({status}). Lowering priority => {new_priority}")
+        update_priority_queue_url(conn, url_id, new_priority)
+        return False
+    return True
 
 
 def extract_content():
     """
-    Extract content from the URL and return (url, priority, soup).
-    Ensures that extracted content is valid and meaningful.
-
-    Args:
-        None
+    Pops a URL from the db queue, extracts content, and enqueues for transformation.
 
     Returns:
-        tuple: URL, priority, and BeautifulSoup
+        bool: True if a URL was processed, False if the DB queue was empty or failed early.
     """
-    connect = get_db_connection()
-    cur = connect.cursor()
+    conn = get_db_connection()
 
     try:
-        result = get_priority_queue_url(cur)
+        # 1) Get the highest priority URL
+        result = get_priority_queue_url(conn)
         if not result:
             print("No URLs in priority queue.")
-            return None
+            return False
 
-        url, priority = result
+        url_id, full_url, priority = result
 
-        response = request_url(url)
-        response = reprioritize_url(url, priority, response, cur)
+        # 2) Request the page
+        resp = request_url(full_url)
+        if not resp:
+            print(f"Request failed, removing {url_id} from queue.")
+            remove_from_url_priority_queue(url_id, conn)
+            return False
+        print(f"Request successful for {full_url}")
 
-        if not response:
-            return None
+        # 3) Check status and re-queue or remove
+        if not handle_http_status(conn, url_id, priority, resp):
+            return False
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        # 4) Parse HTML
+        soup = BeautifulSoup(resp.text, "html.parser")
+        if not soup or not soup.body or len(soup.get_text(strip=True)) < 10:
+            print(f"Skipping {full_url}: No meaningful content found.")
+            remove_from_url_priority_queue(url_id, conn)
+            return False
 
-        if not soup or not soup.body or len(soup.get_text(strip=True)) < 100:
-            print(f"Skipping {url}: No meaningful content found.")
-            return None
+        # 5) Successful extraction remove from DB queue
+        remove_from_url_priority_queue(url_id, conn)
 
-        remove_from_url_priority_queue(url, cur)
-        text_transformation_queue.put((url, priority, soup))
+        # 6) Enqueue to next phase
+        text_transformation_queue.put((full_url, priority, soup))
+        return True
+
     except Exception as e:
         print(f"Extraction failed: {e}")
-        return None
+        return False
     finally:
-        cur.close()
-        connect.close()
+        conn.close()

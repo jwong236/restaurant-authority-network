@@ -207,6 +207,18 @@ def insert_reference(restaurant_id, url_id, relevance_score, conn):
 
 
 # ---------------- PRIORITY QUEUES ----------------
+def get_url_priority_queue_length(conn):
+    """Get the number of URLs in the priority queue."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM url_priority_queue")
+            result = cur.fetchone()
+            return result[0] if result else 0
+    except Exception as e:
+        logging.error(f"Error getting URL priority queue length: {e}")
+        return 0
+
+
 def insert_into_url_priority_queue(url_id, priority, conn):
     """Insert a URL into the priority queue or update its priority."""
     try:
@@ -238,11 +250,18 @@ def insert_into_restaurant_priority_queue(name, priority, conn):
 
 
 def get_priority_queue_url(conn):
-    """Get the URL with the highest priority from the priority queue."""
+    """Get the URL with the highest priority along with its full URL from the url table."""
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT url_id, priority FROM url_priority_queue ORDER BY priority DESC LIMIT 1 FOR UPDATE"
+                """
+                SELECT url.id, url.full_url, url_priority_queue.priority
+                FROM url_priority_queue
+                JOIN url ON url.id = url_priority_queue.url_id
+                ORDER BY url_priority_queue.priority DESC
+                LIMIT 1
+                FOR UPDATE
+                """
             )
             result = cur.fetchone()
             return result if result else None
