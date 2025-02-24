@@ -29,43 +29,16 @@ def adjust_domain_quality(old_score, relevance):
     return max(-1.0, min(old_score + delta, 1.0))
 
 
-def load_identified_restaurants(identified_restaurants, conn):
-    """Loads validated restaurants into the database."""
-    ids = []
-    start_time = time.time()
-
-    for i, restaurant in enumerate(identified_restaurants, 1):
-        logging.info(
-            f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Inserting: {restaurant}"
-        )
-        rest_id = insert_restaurant(restaurant, None, conn)
-
-        if rest_id:
-            ids.append(rest_id)
-        else:
-            logging.warning(f"[{PHASE}]: Failed to insert restaurant {restaurant}")
-
-    elapsed_time = time.time() - start_time
-    logging.info(
-        f"[{PHASE}]: Inserted {len(ids)} new restaurants in {elapsed_time:.2f}s."
-    )
-    return ids
-
-
 def load_rejected_restaurants(rejected_restaurants, relevance_score, conn):
     """Adds rejected restaurants to the priority queue with adjusted scores."""
-    start_time = time.time()
-
     for i, rejected in enumerate(rejected_restaurants, 1):
         priority_score = relevance_score * 100
         logging.info(
             f"[{PHASE}]: ({i}/{len(rejected_restaurants)}) Adding '{rejected}' to priority queue with priority {priority_score:.2f}"
         )
         insert_into_restaurant_priority_queue(rejected, priority_score, conn)
-
-    elapsed_time = time.time() - start_time
     logging.info(
-        f"[{PHASE}]: Processed {len(rejected_restaurants)} rejected restaurants in {elapsed_time:.2f}s."
+        f"[{PHASE}]: Processed {len(rejected_restaurants)} rejected restaurants."
     )
 
 
@@ -90,10 +63,10 @@ def load_data(payload):
     target_url = payload["target_url"]
     relevance_score = payload["relevance_score"]
     derived_url_pairs = payload["derived_url_pairs"]
-    identified_restaurants = payload[
+    validated_restaurants = payload[
         "identified_restaurants"
     ]  # Valiated restaurants. Guaranteed to be in database
-    rejected_restaurants = payload[
+    potential_restaurants = payload[
         "rejected_restaurants"
     ]  # Restaurants that aren't in database. May still be valid
 
@@ -102,57 +75,43 @@ def load_data(payload):
 
     try:
         logging.info(
-            f"[{PHASE}]: ------------------ STARTING LOAD PHASE ------------------"
+            f"[{PHASE}]: {target_url} - {len(validated_restaurants)} mentions found in database, {len(potential_restaurants)} mentions not found in database."
         )
-        logging.info(f"[{PHASE}]: Processing data for {target_url}")
-        logging.info(f"[{PHASE}]: BEGIN TRANSACTION")
-
-        # Check if target URL exists
-        logging.info(f"[{PHASE}]: Checking if target URL exists: {target_url}")
         url_id = check_url_exists(target_url, conn)
         if not url_id:
-            logging.error(f"[{PHASE}]: Failed to load target URL: {target_url}")
-            return
-        logging.info(f"[{PHASE}]: Attempting to create references for target URL")
-        for i, restaurant in enumerate(identified_restaurants):
-            exists_id = check_restaurant_exists(
-                restaurant, conn
-            )  # TODO: Exact match is causing validated restaurant to not be found
-            logging.info(
-                f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Creating references for: {restaurant}"
+            logging.error(
+                f"[{PHASE}]: {target_url} - reached load phase without a valid URL ID."
             )
+            return
+        for i, restaurant in enumerate(validated_restaurants):
+            exists_id = check_restaurant_exists(restaurant, conn)
             if exists_id:
                 load_reference(exists_id, url_id, conn, relevance_score)
                 logging.info(
-                    f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Created reference for: {restaurant}"
+                    f"[{PHASE}]: {target_url} - Linked to {restaurant} in reference"
                 )
             else:
                 logging.error(
-                    f"[{PHASE}]: ({i}/{len(identified_restaurants)}) Validated restaurant was not found: {restaurant}"
+                    f"[{PHASE}]: {target_url} - Restaurant {restaurant} not found in database."
                 )
 
         # Process rejected restaurants
-        load_rejected_restaurants(rejected_restaurants, relevance_score, conn)
+        load_rejected_restaurants(potential_restaurants, relevance_score, conn)
+        # TODO: Issue: Rejected restaurants should be paired with URL they were found in to not lose the potential reference
 
         # Enqueue derived URLs for validation
-        start_time = time.time()
         for i, (new_url, new_rel_score) in enumerate(derived_url_pairs, 1):
             logging.info(
                 f"[{PHASE}]: ({i}/{len(derived_url_pairs)}) Enqueuing derived URL: {new_url} with relevance {new_rel_score}"
             )
+
             validate_queue.put((new_url, new_rel_score))
-        elapsed_time = time.time() - start_time
-        logging.info(
-            f"[{PHASE}]: Enqueued {len(derived_url_pairs)} derived URLs in {elapsed_time:.2f}s."
-        )
 
         conn.commit()
-        logging.info(f"[{PHASE}]: COMMIT TRANSACTION (All data saved successfully)")
         processed_count += 1
 
     except Exception as e:
-        logging.error(f"[{PHASE}]: ERROR: {e}", exc_info=True)
-        logging.info(f"[{PHASE}]: ROLLBACK TRANSACTION (Undoing changes due to error)")
+        logging.error(f"[{PHASE}]: {target_url} - ERROR: {e}")
         conn.rollback()
     finally:
         conn.close()

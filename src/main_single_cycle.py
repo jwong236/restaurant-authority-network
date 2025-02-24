@@ -34,7 +34,7 @@ queues = {
 def print_queue_contents(conn):
     url_count = get_url_priority_queue_length(conn)
     rest_count = get_restaurant_priority_queue_length(conn)
-    logging.info("\n--- Queue States ---")
+    logging.info("--- Queue States ---")
     logging.info(f"search_queue: {search_queue.qsize()} tasks")
     logging.info(f"validate_queue: {validate_queue.qsize()} tasks")
     logging.info(f"extract_queue: {url_count} tasks")

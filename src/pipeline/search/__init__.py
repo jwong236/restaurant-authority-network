@@ -83,8 +83,8 @@ def search_engine_search(restaurant_data, result_size=20):
         validate_queue.put((url, 1.0 if restaurant_data["initial_search"] else 0.99))
 
     # Final phase summary
-    print(f"[{PHASE}]: Completed. Identified {len(all_urls)} total URLs.")
-    logging.info(f"[{PHASE}]: Completed. Identified {len(all_urls)} total URLs.")
+    print(f"[{PHASE}]: Completed. Identified {len(all_urls)} unique URLs.")
+    logging.info(f"[{PHASE}]: Completed. Identified {len(all_urls)} unique URLs.")
 
     # Log individual query results
     for query_text, url_count in query_url_counts:

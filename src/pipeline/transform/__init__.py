@@ -14,7 +14,7 @@ def is_restaurant(restaurant_name, conn):
     if check_restaurant_exists(restaurant_name, conn):
         return True
     result = fuzzy_search_restaurant_name(restaurant_name, conn)
-    return result and result.get("confidence", 0) > 0.5
+    return result and result.get("confidence", 0) > 0.75
 
 
 def estimate_priority(url, validated_restaurants, current_priority):
@@ -88,24 +88,24 @@ def transform_data(content_tuple):
     processed_count = 0
 
     try:
-        logging.info(f"[{PHASE}]: Processing extracted content for {target_url}")
+        logging.info(f"[{PHASE}]: {target_url} - Processing content...")
 
         # Identify restaurants in content
-        validated_restaurants = []
+        validated_restaurants = set()
         rejected_restaurants = []
         potential_restaurants = identify_restaurants(soup)
 
         for rest_name in potential_restaurants:
             if is_restaurant(rest_name, conn):
-                validated_restaurants.append(rest_name)
+                rest_name = fuzzy_search_restaurant_name(rest_name, conn)["name"]
+                validated_restaurants.add(rest_name)
+                logging.info(f"[{PHASE}]: Identified: {rest_name}")
             else:
                 rejected_restaurants.append(rest_name)
-
-        logging.info(
-            f"[{PHASE}]: Identified {len(validated_restaurants)} validated restaurants."
-        )
-        logging.debug(f"[{PHASE}]: Validated: {validated_restaurants}")
-        logging.debug(f"[{PHASE}]: Rejected: {rejected_restaurants}")
+                logging.info(f"[{PHASE}]: Rejected: {rest_name}")
+        validated_restaurants = list(validated_restaurants)
+        logging.info(f"[{PHASE}]: Identified {len(validated_restaurants)} restaurants.")
+        logging.info(f"[{PHASE}]: Rejected {len(rejected_restaurants)} restaurants.")
 
         # Extract derived URLs
         homepage = extract_homepage(target_url)
@@ -118,10 +118,9 @@ def transform_data(content_tuple):
                 link, validated_restaurants, parent_priority
             )
             derived_url_pairs.append((link, new_priority))
+            logging.info(f"[{PHASE}]: Derived URL: {link} (Priority: {new_priority})")
 
-        logging.info(
-            f"[{PHASE}]: Extracted {len(derived_links)} derived URLs from {target_url}."
-        )
+        logging.info(f"[{PHASE}]: Extracted {len(derived_links)} URLs.")
 
         # Compute relevance score
         relevance_score = estimate_relevance(
@@ -137,18 +136,16 @@ def transform_data(content_tuple):
             "rejected_restaurants": rejected_restaurants,
         }
 
-        logging.info(
-            f"[{PHASE}]: Enqueueing payload (Relevance: {relevance_score:.2f})"
-        )
+        logging.info(f"[{PHASE}]: Enqueuing payload")
         load_queue.put(payload)
         processed_count += 1
 
         return True
 
     except Exception as e:
-        logging.error(f"[{PHASE}]: Error processing content: {e}", exc_info=True)
+        logging.error(f"[{PHASE}]: Error: {e}")
         return False
     finally:
         conn.close()
-        logging.info(f"[{PHASE}]: Completed. Processed {processed_count} pages.")
-        print(f"[{PHASE}]: Completed. Processed {processed_count} pages.")
+        logging.info(f"[{PHASE}]: Processed {processed_count} URLs.")
+        print(f"[{PHASE}]: Processed {processed_count} URLs.")
