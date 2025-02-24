@@ -4,7 +4,6 @@ from urllib.parse import urlparse
 from database.db_connector import get_db_connection
 from database.db_operations import (
     check_restaurant_exists,
-    insert_restaurant,
     insert_reference,
     check_url_exists,
     insert_into_restaurant_priority_queue,
@@ -36,7 +35,7 @@ def load_rejected_restaurants(rejected_restaurants, relevance_score, conn):
         logging.info(
             f"[{PHASE}]: ({i}/{len(rejected_restaurants)}) Adding '{rejected}' to priority queue with priority {priority_score:.2f}"
         )
-        insert_into_restaurant_priority_queue(rejected, priority_score, conn)
+        # insert_into_restaurant_priority_queue(rejected, priority_score, conn) TODO: Implement phase to decide if a restaurant mention is actually a restaurant
     logging.info(
         f"[{PHASE}]: Processed {len(rejected_restaurants)} rejected restaurants."
     )
@@ -77,6 +76,12 @@ def load_data(payload):
         logging.info(
             f"[{PHASE}]: {target_url} - {len(validated_restaurants)} mentions found in database, {len(potential_restaurants)} mentions not found in database."
         )
+        logging.info(f"[{PHASE}]: Validated mentions: {validated_restaurants}")
+        logging.info(f"[{PHASE}]: Potential mentions: {potential_restaurants}")
+        if len(validated_restaurants) == 0:
+            logging.warning(
+                f"[{PHASE}]: {target_url} - No validated mentions. No references will be created."
+            )
         url_id = check_url_exists(target_url, conn)
         if not url_id:
             logging.error(
@@ -104,7 +109,6 @@ def load_data(payload):
             logging.info(
                 f"[{PHASE}]: ({i}/{len(derived_url_pairs)}) Enqueuing derived URL: {new_url} with relevance {new_rel_score}"
             )
-
             validate_queue.put((new_url, new_rel_score))
 
         conn.commit()

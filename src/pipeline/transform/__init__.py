@@ -12,9 +12,11 @@ PHASE = "TRANSFORM"
 def is_restaurant(restaurant_name, conn):
     """Checks if a restaurant exists in DB using exact match or fuzzy search."""
     if check_restaurant_exists(restaurant_name, conn):
-        return True
+        return True, restaurant_name
     result = fuzzy_search_restaurant_name(restaurant_name, conn)
-    return result and result.get("confidence", 0) > 0.75
+    return result and result.get("confidence", 0) > 0.75, (
+        result["name"] if result else None
+    )
 
 
 def estimate_priority(url, validated_restaurants, current_priority):
@@ -96,8 +98,8 @@ def transform_data(content_tuple):
         potential_restaurants = identify_restaurants(soup)
 
         for rest_name in potential_restaurants:
-            if is_restaurant(rest_name, conn):
-                rest_name = fuzzy_search_restaurant_name(rest_name, conn)["name"]
+            exists, rest_name = is_restaurant(rest_name, conn)
+            if exists:
                 validated_restaurants.add(rest_name)
                 logging.info(f"[{PHASE}]: Identified: {rest_name}")
             else:

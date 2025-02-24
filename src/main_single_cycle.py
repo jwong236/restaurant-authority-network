@@ -7,7 +7,7 @@ from queue_manager.task_queues import (
     transform_queue,
     load_queue,
 )
-from pipeline.initialize import get_restaurant_batch
+
 from pipeline.search import search_engine_search
 from pipeline.validate import validate_url
 from pipeline.extract import extract_content
@@ -16,9 +16,9 @@ from pipeline.load import load_data
 from utils.setup_logging import setup_logging
 from database.db_operations import (
     get_url_priority_queue_length,
-    get_restaurant_priority_queue_length,
 )
 from database.db_connector import get_db_connection
+from queue_manager.pipeline_helpers import print_queue_contents, initialize_restaurants
 
 load_dotenv()
 setup_logging(log_filename="pipeline.log", log_level=logging.INFO, log_to_console=True)
@@ -29,19 +29,6 @@ queues = {
     "transform_queue": transform_queue,
     "load_queue": load_queue,
 }
-
-
-def print_queue_contents(conn):
-    url_count = get_url_priority_queue_length(conn)
-    rest_count = get_restaurant_priority_queue_length(conn)
-    logging.info("--- Queue States ---")
-    logging.info(f"search_queue: {search_queue.qsize()} tasks")
-    logging.info(f"validate_queue: {validate_queue.qsize()} tasks")
-    logging.info(f"extract_queue: {url_count} tasks")
-    logging.info(f"transform_queue: {transform_queue.qsize()} tasks")
-    logging.info(f"load_queue: {load_queue.qsize()} tasks")
-    logging.info(f"verify_queue: {rest_count} tasks")
-    logging.info("--------------------\n")
 
 
 def process_extraction_task(func, conn):
@@ -70,25 +57,14 @@ def process_task(phase_name, task_queue, func):
     logging.info(f"[{phase_name.upper()}]: Completed. Processed {count} tasks.\n")
 
 
-def initialize(r_json="michelin_restaurants.json", progress="progress_tracker.json"):
-    ph = "INITIALIZE"
-    logging.info(f"[{ph}]: Fetching batch.")
-    rlist = get_restaurant_batch(r_json, progress, 1)
-    for r in rlist:
-        r["initial_search"] = True
-        search_queue.put(r)
-        logging.info(f"[{ph}]: Added to search queue: {r}")
-    logging.info(f"[{ph}]: Done. {len(rlist)} restaurants.")
-
-
 def main():
     conn = get_db_connection()
     logging.info("[PIPELINE]: Starting pipeline.")
-    print_queue_contents(conn)
+    print_queue_contents(conn, queues)
     input("Press Enter to begin...\n")
 
-    initialize()
-    print_queue_contents(conn)
+    initialize_restaurants()
+    print_queue_contents(conn, queues)
 
     phase_flow = [
         ("Search", search_queue, search_engine_search),
@@ -104,7 +80,7 @@ def main():
             process_extraction_task(func, conn)
         else:
             process_task(name, q, func)
-        print_queue_contents(conn)
+        print_queue_contents(conn, queues)
 
     conn.close()
     logging.info("[PIPELINE]: All phases complete!")
