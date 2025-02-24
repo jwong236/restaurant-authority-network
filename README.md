@@ -1,8 +1,8 @@
-# TravelQuest ETL
+# Restaurant Authority Network
 
 ## Overview
 
-`travelquest-etl` is an autonomous crawling, extraction, and storage pipeline with the purpose of building a dataset of restaurants and webpages that reference them. This information can be used to determine authority of domains, as well as popularity of restaurants based on backlinks (Inspired by Google's PageRank algorithm). It continuously explores and expands its dataset, using machine learning models to estimate the relevance and priority of discovered resources. By analyzing backlinks and citations, the system calculates domain authority scores for restaurants and blogs.
+`restaurant-authority-network` is an autonomous crawling, extraction, and storage pipeline with the purpose of building a dataset of restaurants and webpages that reference them. This information can be used to determine authority of domains, as well as popularity of restaurants based on backlinks (Inspired by Google's PageRank algorithm). It continuously explores and expands its dataset, using machine learning models to estimate the relevance and priority of discovered resources. By analyzing backlinks and citations, the system calculates domain authority scores for restaurants and blogs.
 
 ## **Features**
 
