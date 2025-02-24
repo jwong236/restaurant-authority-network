@@ -2,7 +2,7 @@
 
 ## Overview
 
-`travelquest-etl` is an autonomous crawling, extraction, and storage pipeline designed for the TravelQuest search engine. It continuously explores and expands its dataset, using machine learning models to estimate the relevance and priority of discovered resources. By analyzing backlinks and citations, the system calculates domain authority scores for restaurants and blogs, similar to Google's PageRank algorithm.
+`travelquest-etl` is an autonomous crawling, extraction, and storage pipeline with the purpose of building a dataset of restaurants and webpages that reference them. This information can be used to determine authority of domains, as well as popularity of restaurants based on backlinks (Inspired by Google's PageRank algorithm). It continuously explores and expands its dataset, using machine learning models to estimate the relevance and priority of discovered resources. By analyzing backlinks and citations, the system calculates domain authority scores for restaurants and blogs.
 
 ## **Features**
 
@@ -46,6 +46,7 @@
 
 - **Python** → Web crawling, data extraction, and ETL processing.
 - **PostgreSQL** → Data storage, indexing, and retrieval.
+- **Scrapy** → Namied Entity Recognition (NER) model for recognizing restaurant names.
 - **BeautifulSoup & Requests** → HTML parsing and web requests.
 - **Multithreading & Priority Queues** → Efficiently handling large-scale data extraction.
 

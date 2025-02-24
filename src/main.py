@@ -40,11 +40,11 @@ def main():
     print_queue_contents(conn, queues)
 
     threads = []
-    NUM_SEARCH_WORKERS = 3
+    NUM_SEARCH_WORKERS = 1
     NUM_VALIDATE_WORKERS = 3
     NUM_TRANSFORM_WORKERS = 3
-    NUM_LOAD_WORKERS = 3
-    NUM_EXTRACT_WORKERS = 3
+    NUM_LOAD_WORKERS = 1
+    NUM_EXTRACT_WORKERS = 1
 
     for i in range(NUM_SEARCH_WORKERS):
         t = threading.Thread(

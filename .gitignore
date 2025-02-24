@@ -161,3 +161,4 @@ cython_debug/
 
 .backups/
 src/pipeline/initialize/data/
+logs/
